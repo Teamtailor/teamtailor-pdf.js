@@ -1,3 +1,7 @@
+# Teamtailor notes
+This is a mirrored version of the original repository. In order to get the implementation to work with s3 we've changed the source code and whitelisted a couple of our domains.
+After doing changes in this repo, run `gulp minified` command and copy the minified files from `/build/minified/` into the Teamtailor repository.
+
 # PDF.js
 
 PDF.js is a Portable Document Format (PDF) viewer that is built with HTML5.
