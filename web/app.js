@@ -1494,6 +1494,12 @@ if (typeof PDFJSDev === 'undefined' || PDFJSDev.test('GENERIC')) {
     'https://www.teamtailor.localhost',
     'http://www.teamtailor.localhost',
     'https://www.teamtailor.com',
+    'https://app.teamtailor.com',
+    'https://app.teamtailor.localhost',
+    'https://app.teamtailor-staging.com',
+    'https://tt.teamtailor-staging.com',
+    'https://tt.teamtailor.com',
+    'https://tt.teamtailor.localhost',
     'https://www.browserstack.com'
   ];
   validateFileURL = function validateFileURL(file) {
