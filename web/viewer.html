@@ -388,3 +388,23 @@ See https://github.com/adobe-type-tools/cmap-resources
     <div id="printContainer"></div>
   </body>
 </html>
+
+<!-- Open urls in new tab -->
+<script>
+  var mutationObserver = new MutationObserver(function(mutations) {
+    mutations.forEach(function(mutation) {
+      var pageUrls = document.querySelectorAll('.page a');
+      if (pageUrls.length) {
+        pageUrls[0].setAttribute('target', 'blank');
+      }
+    });
+  });
+   mutationObserver.observe(document.getElementById('viewer'), {
+    attributes: false,
+    characterData: false,
+    childList: true,
+    subtree: true,
+    attributeOldValue: false,
+    characterDataOldValue: false
+  });
+</script>
