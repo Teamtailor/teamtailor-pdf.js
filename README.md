@@ -1,7 +1,7 @@
 # Teamtailor notes
 
 This is a mirrored version of the original repository. In order to get the implementation to work with s3 we've changed the source code and whitelisted a couple of our domains.
-After doing changes in this repo, run `gulp minified` command and copy the minified files from `/build/minified/` into the Teamtailor repository.
+After doing changes in this repo, run `npm install` then `npx gulp minified` command and copy the minified files from `/build/minified/` into the Teamtailor repository.
 
 # PDF.js [![Build Status](https://travis-ci.org/mozilla/pdf.js.svg?branch=master)](https://travis-ci.org/mozilla/pdf.js)
 
