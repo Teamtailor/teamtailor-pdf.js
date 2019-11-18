@@ -1491,16 +1491,11 @@ if (typeof PDFJSDev === 'undefined' || PDFJSDev.test('GENERIC')) {
     'null',
     'http://mozilla.github.io',
     'https://mozilla.github.io',
-    'https://www.teamtailor.localhost',
-    'http://www.teamtailor.localhost',
-    'https://www.teamtailor.com',
-    'https://app.teamtailor.com',
-    'https://app.teamtailor.localhost',
-    'https://app.teamtailor-staging.com',
-    'https://tt.teamtailor-staging.com',
-    'https://tt.teamtailor.com',
-    'https://tt.teamtailor.localhost',
-    'https://www.browserstack.com'
+    'https://www.browserstack.com',
+    '.teamtailor.localhost',
+    '.teamtailor.com',
+    '.teamtailor-staging.com',
+    '.teamtailor-enterprise.com',
   ];
   validateFileURL = function validateFileURL(file) {
     if (file === undefined) {
@@ -1508,7 +1503,12 @@ if (typeof PDFJSDev === 'undefined' || PDFJSDev.test('GENERIC')) {
     }
     try {
       let viewerOrigin = new URL(window.location.href).origin || 'null';
-      if (HOSTED_VIEWER_ORIGINS.includes(viewerOrigin)) {
+
+      let originMatches = function(allowedOrigin) {
+        return allowedOrigin.includes(viewerOrigin) || viewerOrigin.endsWith(origin);
+      }
+
+      if (HOSTED_VIEWER_ORIGINS.some(originMatches)) {
         // Hosted or local viewer, allow for any file locations
         return;
       }
