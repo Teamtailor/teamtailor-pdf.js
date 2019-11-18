@@ -1505,8 +1505,9 @@ if (typeof PDFJSDev === 'undefined' || PDFJSDev.test('GENERIC')) {
       let viewerOrigin = new URL(window.location.href).origin || 'null';
 
       let originMatches = function(allowedOrigin) {
-        return allowedOrigin.includes(viewerOrigin) || viewerOrigin.endsWith(origin);
-      }
+        return allowedOrigin.includes(viewerOrigin) ||
+          viewerOrigin.endsWith(allowedOrigin);
+      };
 
       if (HOSTED_VIEWER_ORIGINS.some(originMatches)) {
         // Hosted or local viewer, allow for any file locations
