@@ -1487,16 +1487,17 @@ let PDFViewerApplication = {
 
 let validateFileURL;
 if (typeof PDFJSDev === 'undefined' || PDFJSDev.test('GENERIC')) {
-  const HOSTED_VIEWER_ORIGINS = [
+  const SAFE_HOSTED_VIEWER_ORIGINS = [
     'null',
-    'http://mozilla.github.io',
-    'https://mozilla.github.io',
-    'https://www.browserstack.com',
     '.teamtailor.localhost',
-    '.teamtailor.com',
-    '.teamtailor-staging.com',
-    '.teamtailor-enterprise.com',
   ];
+
+  const S3_BUCKETS = [
+    'teamtailor-production',
+    'teamtailor-staging',
+    'teamtailor-swedbank',
+  ];
+
   validateFileURL = function validateFileURL(file) {
     if (file === undefined) {
       return;
@@ -1509,11 +1510,20 @@ if (typeof PDFJSDev === 'undefined' || PDFJSDev.test('GENERIC')) {
           viewerOrigin.endsWith(allowedOrigin);
       };
 
-      if (HOSTED_VIEWER_ORIGINS.some(originMatches)) {
-        // Hosted or local viewer, allow for any file locations
+      let { origin, protocol, } = new URL(file, window.location.href);
+
+      if (SAFE_HOSTED_VIEWER_ORIGINS.some(originMatches)) {
+        // Local viewer, allow for any file locations
         return;
       }
-      let { origin, protocol, } = new URL(file, window.location.href);
+
+      let fileOriginMatches = function(allowedBucket) {
+        return origin === 'https://' + allowedBucket + '.s3.eu-west-1.amazonaws.com';
+      };
+      if (S3_BUCKETS.some(fileOriginMatches)) {
+        return;
+      }
+
       // Removing of the following line will not guarantee that the viewer will
       // start accepting URLs from foreign origin -- CORS headers on the remote
       // server must be properly configured.
