@@ -1496,6 +1496,7 @@ if (typeof PDFJSDev === 'undefined' || PDFJSDev.test('GENERIC')) {
     'teamtailor-production',
     'teamtailor-staging',
     'teamtailor-swedbank',
+    'teamtailor-lmfr',
   ];
 
   validateFileURL = function validateFileURL(file) {
