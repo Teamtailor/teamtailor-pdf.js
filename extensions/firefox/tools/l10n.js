@@ -1,15 +1,17 @@
 "use strict";
 
 // Small subset of the webL10n API by Fabien Cazenave for PDF.js extension.
-(function(window) {
-  var gLanguage = "";
-  var gExternalLocalizerServices = null;
-  var gReadyState = "loading";
+(function (window) {
+  let gL10nData = null;
+  let gLanguage = "";
+  let gExternalLocalizerServices = null;
+  let gReadyState = "loading";
 
   // fetch an l10n objects
   function getL10nData(key) {
-    var response = gExternalLocalizerServices.getStrings(key);
-    var data = JSON.parse(response);
+    gL10nData ||= gExternalLocalizerServices.getStrings();
+
+    const data = gL10nData?.[key];
     if (!data) {
       console.warn("[l10n] #" + key + " missing for [" + gLanguage + "]");
     }
@@ -21,7 +23,7 @@
     if (!args) {
       return text;
     }
-    return text.replace(/\{\{\s*(\w+)\s*\}\}/g, function(all, name) {
+    return text.replace(/\{\{\s*(\w+)\s*\}\}/g, function (all, name) {
       return name in args ? args[name] : "{{" + name + "}}";
     });
   }
@@ -126,6 +128,6 @@
     },
 
     // translate an element or document fragment
-    translate: translateFragment
+    translate: translateFragment,
   };
 })(this);

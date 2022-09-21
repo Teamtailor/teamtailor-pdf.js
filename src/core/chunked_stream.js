@@ -12,22 +12,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* eslint no-var: error */
 
 import {
-  arrayByteLength, arraysToBytes, createPromiseCapability, isEmptyObj
-} from '../shared/util';
-import { MissingDataException } from './core_utils';
+  arrayByteLength,
+  arraysToBytes,
+  createPromiseCapability,
+} from "../shared/util.js";
+import { MissingDataException } from "./core_utils.js";
+import { Stream } from "./stream.js";
 
-class ChunkedStream {
+class ChunkedStream extends Stream {
   constructor(length, chunkSize, manager) {
-    this.bytes = new Uint8Array(length);
-    this.start = 0;
-    this.pos = 0;
-    this.end = length;
+    super(
+      /* arrayBuffer = */ new Uint8Array(length),
+      /* start = */ 0,
+      /* length = */ length,
+      /* dict = */ null
+    );
+
     this.chunkSize = chunkSize;
-    this.loadedChunks = [];
-    this.numChunksLoaded = 0;
+    this._loadedChunks = new Set();
     this.numChunks = Math.ceil(length / chunkSize);
     this.manager = manager;
     this.progressiveDataLength = 0;
@@ -39,18 +43,18 @@ class ChunkedStream {
   getMissingChunks() {
     const chunks = [];
     for (let chunk = 0, n = this.numChunks; chunk < n; ++chunk) {
-      if (!this.loadedChunks[chunk]) {
+      if (!this._loadedChunks.has(chunk)) {
         chunks.push(chunk);
       }
     }
     return chunks;
   }
 
-  getBaseStreams() {
-    return [this];
+  get numChunksLoaded() {
+    return this._loadedChunks.size;
   }
 
-  allChunksLoaded() {
+  get isDataLoaded() {
     return this.numChunksLoaded === this.numChunks;
   }
 
@@ -72,10 +76,9 @@ class ChunkedStream {
     const endChunk = Math.floor((end - 1) / chunkSize) + 1;
 
     for (let curChunk = beginChunk; curChunk < endChunk; ++curChunk) {
-      if (!this.loadedChunks[curChunk]) {
-        this.loadedChunks[curChunk] = true;
-        ++this.numChunksLoaded;
-      }
+      // Since a value can only occur *once* in a `Set`, there's no need to
+      // manually check `Set.prototype.has()` before adding the value here.
+      this._loadedChunks.add(curChunk);
     }
   }
 
@@ -86,14 +89,15 @@ class ChunkedStream {
     this.bytes.set(new Uint8Array(data), position);
     position += data.byteLength;
     this.progressiveDataLength = position;
-    const endChunk = position >= this.end ? this.numChunks :
-                     Math.floor(position / this.chunkSize);
+    const endChunk =
+      position >= this.end
+        ? this.numChunks
+        : Math.floor(position / this.chunkSize);
 
     for (let curChunk = beginChunk; curChunk < endChunk; ++curChunk) {
-      if (!this.loadedChunks[curChunk]) {
-        this.loadedChunks[curChunk] = true;
-        ++this.numChunksLoaded;
-      }
+      // Since a value can only occur *once* in a `Set`, there's no need to
+      // manually check `Set.prototype.has()` before adding the value here.
+      this._loadedChunks.add(curChunk);
     }
   }
 
@@ -103,11 +107,14 @@ class ChunkedStream {
     }
 
     const chunk = Math.floor(pos / this.chunkSize);
+    if (chunk > this.numChunks) {
+      return;
+    }
     if (chunk === this.lastSuccessfulEnsureByteChunk) {
       return;
     }
 
-    if (!this.loadedChunks[chunk]) {
+    if (!this._loadedChunks.has(chunk)) {
       throw new MissingDataException(pos, pos + 1);
     }
     this.lastSuccessfulEnsureByteChunk = chunk;
@@ -121,11 +128,16 @@ class ChunkedStream {
       return;
     }
 
-    const chunkSize = this.chunkSize;
-    const beginChunk = Math.floor(begin / chunkSize);
-    const endChunk = Math.floor((end - 1) / chunkSize) + 1;
+    const beginChunk = Math.floor(begin / this.chunkSize);
+    if (beginChunk > this.numChunks) {
+      return;
+    }
+    const endChunk = Math.min(
+      Math.floor((end - 1) / this.chunkSize) + 1,
+      this.numChunks
+    );
     for (let chunk = beginChunk; chunk < endChunk; ++chunk) {
-      if (!this.loadedChunks[chunk]) {
+      if (!this._loadedChunks.has(chunk)) {
         throw new MissingDataException(begin, end);
       }
     }
@@ -135,7 +147,7 @@ class ChunkedStream {
     const numChunks = this.numChunks;
     for (let i = 0; i < numChunks; ++i) {
       const chunk = (beginChunk + i) % numChunks; // Wrap around to beginning.
-      if (!this.loadedChunks[chunk]) {
+      if (!this._loadedChunks.has(chunk)) {
         return chunk;
       }
     }
@@ -143,15 +155,7 @@ class ChunkedStream {
   }
 
   hasChunk(chunk) {
-    return !!this.loadedChunks[chunk];
-  }
-
-  get length() {
-    return this.end - this.start;
-  }
-
-  get isEmpty() {
-    return this.length === 0;
+    return this._loadedChunks.has(chunk);
   }
 
   getByte() {
@@ -165,25 +169,7 @@ class ChunkedStream {
     return this.bytes[this.pos++];
   }
 
-  getUint16() {
-    const b0 = this.getByte();
-    const b1 = this.getByte();
-    if (b0 === -1 || b1 === -1) {
-      return -1;
-    }
-    return (b0 << 8) + b1;
-  }
-
-  getInt32() {
-    const b0 = this.getByte();
-    const b1 = this.getByte();
-    const b2 = this.getByte();
-    const b3 = this.getByte();
-    return (b0 << 24) + (b1 << 16) + (b2 << 8) + b3;
-  }
-
-  // Returns subarray of original buffer, should only be read.
-  getBytes(length, forceClamped = false) {
+  getBytes(length) {
     const bytes = this.bytes;
     const pos = this.pos;
     const strEnd = this.end;
@@ -192,9 +178,7 @@ class ChunkedStream {
       if (strEnd > this.progressiveDataLength) {
         this.ensureRange(pos, strEnd);
       }
-      const subarray = bytes.subarray(pos, strEnd);
-      // `this.bytes` is always a `Uint8Array` here.
-      return (forceClamped ? new Uint8ClampedArray(subarray) : subarray);
+      return bytes.subarray(pos, strEnd);
     }
 
     let end = pos + length;
@@ -206,21 +190,7 @@ class ChunkedStream {
     }
 
     this.pos = end;
-    const subarray = bytes.subarray(pos, end);
-    // `this.bytes` is always a `Uint8Array` here.
-    return (forceClamped ? new Uint8ClampedArray(subarray) : subarray);
-  }
-
-  peekByte() {
-    const peekedByte = this.getByte();
-    this.pos--;
-    return peekedByte;
-  }
-
-  peekBytes(length, forceClamped = false) {
-    const bytes = this.getBytes(length, forceClamped);
-    this.pos -= bytes.length;
-    return bytes;
+    return bytes.subarray(pos, end);
   }
 
   getByteRange(begin, end) {
@@ -236,22 +206,7 @@ class ChunkedStream {
     return this.bytes.subarray(begin, end);
   }
 
-  skip(n) {
-    if (!n) {
-      n = 1;
-    }
-    this.pos += n;
-  }
-
-  reset() {
-    this.pos = this.start;
-  }
-
-  moveStart() {
-    this.start = this.pos;
-  }
-
-  makeSubStream(start, length, dict) {
+  makeSubStream(start, length, dict = null) {
     if (length) {
       if (start + length > this.progressiveDataLength) {
         this.ensureRange(start, start + length);
@@ -273,24 +228,37 @@ class ChunkedStream {
 
     function ChunkedStreamSubstream() {}
     ChunkedStreamSubstream.prototype = Object.create(this);
-    ChunkedStreamSubstream.prototype.getMissingChunks = function() {
+    ChunkedStreamSubstream.prototype.getMissingChunks = function () {
       const chunkSize = this.chunkSize;
       const beginChunk = Math.floor(this.start / chunkSize);
       const endChunk = Math.floor((this.end - 1) / chunkSize) + 1;
       const missingChunks = [];
       for (let chunk = beginChunk; chunk < endChunk; ++chunk) {
-        if (!this.loadedChunks[chunk]) {
+        if (!this._loadedChunks.has(chunk)) {
           missingChunks.push(chunk);
         }
       }
       return missingChunks;
     };
+    Object.defineProperty(ChunkedStreamSubstream.prototype, "isDataLoaded", {
+      get() {
+        if (this.numChunksLoaded === this.numChunks) {
+          return true;
+        }
+        return this.getMissingChunks().length === 0;
+      },
+      configurable: true,
+    });
 
     const subStream = new ChunkedStreamSubstream();
     subStream.pos = subStream.start = start;
     subStream.end = start + length || this.end;
     subStream.dict = dict;
     return subStream;
+  }
+
+  getBaseStreams() {
+    return [this];
   }
 }
 
@@ -305,9 +273,9 @@ class ChunkedStreamManager {
 
     this.currRequestId = 0;
 
-    this.chunksNeededByRequest = Object.create(null);
-    this.requestsByChunk = Object.create(null);
-    this.promisesByRequest = Object.create(null);
+    this._chunksNeededByRequest = new Map();
+    this._requestsByChunk = new Map();
+    this._promisesByRequest = new Map();
     this.progressiveDataLength = 0;
     this.aborted = false;
 
@@ -324,16 +292,17 @@ class ChunkedStreamManager {
       rangeReader.onProgress = this.onProgress.bind(this);
     }
 
-    let chunks = [], loaded = 0;
-    const promise = new Promise((resolve, reject) => {
-      const readChunk = (chunk) => {
+    let chunks = [],
+      loaded = 0;
+    return new Promise((resolve, reject) => {
+      const readChunk = chunk => {
         try {
           if (!chunk.done) {
             const data = chunk.value;
             chunks.push(data);
             loaded += arrayByteLength(data);
             if (rangeReader.isStreamingSupported) {
-              this.onProgress({ loaded, });
+              this.onProgress({ loaded });
             }
             rangeReader.read().then(readChunk, reject);
             return;
@@ -346,14 +315,12 @@ class ChunkedStreamManager {
         }
       };
       rangeReader.read().then(readChunk, reject);
-    });
-    promise.then((data) => {
+    }).then(data => {
       if (this.aborted) {
         return; // Ignoring any data after abort.
       }
-      this.onReceiveData({ chunk: data, begin, });
+      this.onReceiveData({ chunk: data, begin });
     });
-    // TODO check errors
   }
 
   /**
@@ -369,43 +336,51 @@ class ChunkedStreamManager {
   _requestChunks(chunks) {
     const requestId = this.currRequestId++;
 
-    const chunksNeeded = Object.create(null);
-    this.chunksNeededByRequest[requestId] = chunksNeeded;
+    const chunksNeeded = new Set();
+    this._chunksNeededByRequest.set(requestId, chunksNeeded);
     for (const chunk of chunks) {
       if (!this.stream.hasChunk(chunk)) {
-        chunksNeeded[chunk] = true;
+        chunksNeeded.add(chunk);
       }
     }
 
-    if (isEmptyObj(chunksNeeded)) {
+    if (chunksNeeded.size === 0) {
       return Promise.resolve();
     }
 
     const capability = createPromiseCapability();
-    this.promisesByRequest[requestId] = capability;
+    this._promisesByRequest.set(requestId, capability);
 
     const chunksToRequest = [];
-    for (let chunk in chunksNeeded) {
-      chunk = chunk | 0;
-      if (!(chunk in this.requestsByChunk)) {
-        this.requestsByChunk[chunk] = [];
+    for (const chunk of chunksNeeded) {
+      let requestIds = this._requestsByChunk.get(chunk);
+      if (!requestIds) {
+        requestIds = [];
+        this._requestsByChunk.set(chunk, requestIds);
+
         chunksToRequest.push(chunk);
       }
-      this.requestsByChunk[chunk].push(requestId);
+      requestIds.push(requestId);
     }
 
-    if (!chunksToRequest.length) {
-      return capability.promise;
+    if (chunksToRequest.length > 0) {
+      const groupedChunksToRequest = this.groupChunks(chunksToRequest);
+      for (const groupedChunk of groupedChunksToRequest) {
+        const begin = groupedChunk.beginChunk * this.chunkSize;
+        const end = Math.min(
+          groupedChunk.endChunk * this.chunkSize,
+          this.length
+        );
+        this.sendRequest(begin, end).catch(capability.reject);
+      }
     }
 
-    const groupedChunksToRequest = this.groupChunks(chunksToRequest);
-    for (const groupedChunk of groupedChunksToRequest) {
-      const begin = groupedChunk.beginChunk * this.chunkSize;
-      const end = Math.min(groupedChunk.endChunk * this.chunkSize, this.length);
-      this.sendRequest(begin, end);
-    }
-
-    return capability.promise;
+    return capability.promise.catch(reason => {
+      if (this.aborted) {
+        return; // Ignoring any pending requests after abort.
+      }
+      throw reason;
+    });
   }
 
   getStream() {
@@ -440,7 +415,7 @@ class ChunkedStreamManager {
       }
     }
 
-    chunksToRequest.sort(function(a, b) {
+    chunksToRequest.sort(function (a, b) {
       return a - b;
     });
     return this._requestChunks(chunksToRequest);
@@ -462,13 +437,11 @@ class ChunkedStreamManager {
       }
 
       if (prevChunk >= 0 && prevChunk + 1 !== chunk) {
-        groupedChunks.push({ beginChunk,
-                             endChunk: prevChunk + 1, });
+        groupedChunks.push({ beginChunk, endChunk: prevChunk + 1 });
         beginChunk = chunk;
       }
       if (i + 1 === chunks.length) {
-        groupedChunks.push({ beginChunk,
-                             endChunk: chunk + 1, });
+        groupedChunks.push({ beginChunk, endChunk: chunk + 1 });
       }
 
       prevChunk = chunk;
@@ -477,21 +450,23 @@ class ChunkedStreamManager {
   }
 
   onProgress(args) {
-    this.msgHandler.send('DocProgress', {
+    this.msgHandler.send("DocProgress", {
       loaded: this.stream.numChunksLoaded * this.chunkSize + args.loaded,
       total: this.length,
     });
   }
 
   onReceiveData(args) {
-    let chunk = args.chunk;
+    const chunk = args.chunk;
     const isProgressive = args.begin === undefined;
     const begin = isProgressive ? this.progressiveDataLength : args.begin;
     const end = begin + chunk.byteLength;
 
     const beginChunk = Math.floor(begin / this.chunkSize);
-    const endChunk = end < this.length ? Math.floor(end / this.chunkSize) :
-                                         Math.ceil(end / this.chunkSize);
+    const endChunk =
+      end < this.length
+        ? Math.floor(end / this.chunkSize)
+        : Math.ceil(end / this.chunkSize);
 
     if (isProgressive) {
       this.stream.onReceiveProgressiveData(chunk);
@@ -500,23 +475,26 @@ class ChunkedStreamManager {
       this.stream.onReceiveData(begin, chunk);
     }
 
-    if (this.stream.allChunksLoaded()) {
+    if (this.stream.isDataLoaded) {
       this._loadedStreamCapability.resolve(this.stream);
     }
 
     const loadedRequests = [];
-    for (let chunk = beginChunk; chunk < endChunk; ++chunk) {
+    for (let curChunk = beginChunk; curChunk < endChunk; ++curChunk) {
       // The server might return more chunks than requested.
-      const requestIds = this.requestsByChunk[chunk] || [];
-      delete this.requestsByChunk[chunk];
+      const requestIds = this._requestsByChunk.get(curChunk);
+      if (!requestIds) {
+        continue;
+      }
+      this._requestsByChunk.delete(curChunk);
 
       for (const requestId of requestIds) {
-        const chunksNeeded = this.chunksNeededByRequest[requestId];
-        if (chunk in chunksNeeded) {
-          delete chunksNeeded[chunk];
+        const chunksNeeded = this._chunksNeededByRequest.get(requestId);
+        if (chunksNeeded.has(curChunk)) {
+          chunksNeeded.delete(curChunk);
         }
 
-        if (!isEmptyObj(chunksNeeded)) {
+        if (chunksNeeded.size > 0) {
           continue;
         }
         loadedRequests.push(requestId);
@@ -525,7 +503,7 @@ class ChunkedStreamManager {
 
     // If there are no pending requests, automatically fetch the next
     // unfetched chunk of the PDF file.
-    if (!this.disableAutoFetch && isEmptyObj(this.requestsByChunk)) {
+    if (!this.disableAutoFetch && this._requestsByChunk.size === 0) {
       let nextEmptyChunk;
       if (this.stream.numChunksLoaded === 1) {
         // This is a special optimization so that after fetching the first
@@ -544,12 +522,12 @@ class ChunkedStreamManager {
     }
 
     for (const requestId of loadedRequests) {
-      const capability = this.promisesByRequest[requestId];
-      delete this.promisesByRequest[requestId];
+      const capability = this._promisesByRequest.get(requestId);
+      this._promisesByRequest.delete(requestId);
       capability.resolve();
     }
 
-    this.msgHandler.send('DocProgress', {
+    this.msgHandler.send("DocProgress", {
       loaded: this.stream.numChunksLoaded * this.chunkSize,
       total: this.length,
     });
@@ -572,13 +550,10 @@ class ChunkedStreamManager {
     if (this.pdfNetworkStream) {
       this.pdfNetworkStream.cancelAllRequests(reason);
     }
-    for (const requestId in this.promisesByRequest) {
-      this.promisesByRequest[requestId].reject(reason);
+    for (const capability of this._promisesByRequest.values()) {
+      capability.reject(reason);
     }
   }
 }
 
-export {
-  ChunkedStream,
-  ChunkedStreamManager,
-};
+export { ChunkedStream, ChunkedStreamManager };
