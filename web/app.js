@@ -2218,12 +2218,7 @@ if (typeof PDFJSDev === 'undefined' || PDFJSDev.test('GENERIC')) {
     '.teamtailor.localhost',
   ];
 
-  const S3_BUCKETS = [
-    'teamtailor-production',
-    'teamtailor-staging',
-    'teamtailor-swedbank',
-    'teamtailor-lmfr',
-  ];
+  const TEAMTAILOR_S3_BUCKET_REG_EX = /^https:\/\/teamtailor-\w+.s3.[\w-]+.amazonaws.com$/;
 
   validateFileURL = function validateFileURL(file) {
     if (file === undefined) {
@@ -2244,10 +2239,7 @@ if (typeof PDFJSDev === 'undefined' || PDFJSDev.test('GENERIC')) {
         return;
       }
 
-      let fileOriginMatches = function(allowedBucket) {
-        return origin === 'https://' + allowedBucket + '.s3.eu-west-1.amazonaws.com';
-      };
-      if (S3_BUCKETS.some(fileOriginMatches)) {
+      if (TEAMTAILOR_S3_BUCKET_REG_EX.exec(origin)) {
         return;
       }
 
