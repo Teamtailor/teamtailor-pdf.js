@@ -2212,18 +2212,11 @@ const PDFViewerApplication = {
 };
 
 let validateFileURL;
-if (typeof PDFJSDev === 'undefined' || PDFJSDev.test('GENERIC')) {
-  const SAFE_HOSTED_VIEWER_ORIGINS = [
-    'null',
-    '.teamtailor.localhost',
-  ];
+if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
+  const SAFE_HOSTED_VIEWER_ORIGINS = ["null", ".teamtailor.localhost"];
 
-  const S3_BUCKETS = [
-    'teamtailor-production',
-    'teamtailor-staging',
-    'teamtailor-swedbank',
-    'teamtailor-lmfr',
-  ];
+  const TEAMTAILOR_S3_BUCKET_REG_EX =
+    /^https:\/\/teamtailor-[\w-]+\.s3\.[\w-]+\.amazonaws\.com$/;
 
   validateFileURL = function validateFileURL(file) {
     if (file === undefined) {
@@ -2232,22 +2225,21 @@ if (typeof PDFJSDev === 'undefined' || PDFJSDev.test('GENERIC')) {
     try {
       const viewerOrigin = new URL(window.location.href).origin || "null";
 
-      let originMatches = function(allowedOrigin) {
-        return allowedOrigin.includes(viewerOrigin) ||
-          viewerOrigin.endsWith(allowedOrigin);
+      const originMatches = function (allowedOrigin) {
+        return (
+          allowedOrigin.includes(viewerOrigin) ||
+          viewerOrigin.endsWith(allowedOrigin)
+        );
       };
 
-      let { origin, protocol, } = new URL(file, window.location.href);
+      const { origin, protocol } = new URL(file, window.location.href);
 
       if (SAFE_HOSTED_VIEWER_ORIGINS.some(originMatches)) {
         // Local viewer, allow for any file locations
         return;
       }
 
-      let fileOriginMatches = function(allowedBucket) {
-        return origin === 'https://' + allowedBucket + '.s3.eu-west-1.amazonaws.com';
-      };
-      if (S3_BUCKETS.some(fileOriginMatches)) {
+      if (TEAMTAILOR_S3_BUCKET_REG_EX.exec(origin)) {
         return;
       }
 

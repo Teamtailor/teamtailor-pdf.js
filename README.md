@@ -1,7 +1,7 @@
 # Teamtailor notes
 
 This is a mirrored version of the original repository. In order to get the implementation to work with s3 we've changed the source code and whitelisted a couple of our domains.
-After doing changes in this repo, run `npm install` then `./node_modules/.bin/gulp minified` command and copy the minified files from `/build/minified/` into the Teamtailor repository.
+After doing changes in this repo, run `npm install` then `npx gulp minified` command and to deploy the changes you can use the aws cli like this `aws s3 sync build/minified s3://scripts.teamtailor-cdn.com/pdf.js/v5 --acl public-read`, just remember to increment the version number to bust the cache.
 
 # PDF.js [![Build Status](https://travis-ci.org/mozilla/pdf.js.svg?branch=master)](https://travis-ci.org/mozilla/pdf.js)
 
@@ -16,11 +16,11 @@ rendering PDFs.
 PDF.js is an open source project and always looking for more contributors. To
 get involved, visit:
 
-+ [Issue Reporting Guide](https://github.com/mozilla/pdf.js/blob/master/.github/CONTRIBUTING.md)
-+ [Code Contribution Guide](https://github.com/mozilla/pdf.js/wiki/Contributing)
-+ [Frequently Asked Questions](https://github.com/mozilla/pdf.js/wiki/Frequently-Asked-Questions)
-+ [Good Beginner Bugs](https://github.com/mozilla/pdf.js/issues?direction=desc&labels=good-beginner-bug&page=1&sort=created&state=open)
-+ [Projects](https://github.com/mozilla/pdf.js/projects)
+- [Issue Reporting Guide](https://github.com/mozilla/pdf.js/blob/master/.github/CONTRIBUTING.md)
+- [Code Contribution Guide](https://github.com/mozilla/pdf.js/wiki/Contributing)
+- [Frequently Asked Questions](https://github.com/mozilla/pdf.js/wiki/Frequently-Asked-Questions)
+- [Good Beginner Bugs](https://github.com/mozilla/pdf.js/issues?direction=desc&labels=good-beginner-bug&page=1&sort=created&state=open)
+- [Projects](https://github.com/mozilla/pdf.js/projects)
 
 Feel free to stop by our [Matrix room](https://chat.mozilla.org/#/room/#pdfjs:mozilla.org) for questions or guidance.
 
@@ -32,9 +32,9 @@ Please note that the "Modern browsers" version assumes native support for
 features such as optional chaining, nullish coalescing,
 and private `class` fields/methods.
 
-+ Modern browsers: https://mozilla.github.io/pdf.js/web/viewer.html
+- Modern browsers: https://mozilla.github.io/pdf.js/web/viewer.html
 
-+ Older browsers: https://mozilla.github.io/pdf.js/legacy/web/viewer.html
+- Older browsers: https://mozilla.github.io/pdf.js/legacy/web/viewer.html
 
 ### Browser Extensions
 
@@ -141,7 +141,7 @@ Check out our FAQs and get answers to common questions:
 
 Talk to us on Matrix:
 
-+ https://chat.mozilla.org/#/room/#pdfjs:mozilla.org
+- https://chat.mozilla.org/#/room/#pdfjs:mozilla.org
 
 File an issue:
 
