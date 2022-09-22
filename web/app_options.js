@@ -13,8 +13,32 @@
  * limitations under the License.
  */
 
-import { apiCompatibilityParams } from 'pdfjs-lib';
-import { viewerCompatibilityParams } from './viewer_compatibility';
+const compatibilityParams = Object.create(null);
+if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
+  if (
+    typeof PDFJSDev !== "undefined" &&
+    PDFJSDev.test("LIB") &&
+    typeof navigator === "undefined"
+  ) {
+    globalThis.navigator = Object.create(null);
+  }
+  const userAgent = navigator.userAgent || "";
+  const platform = navigator.platform || "";
+  const maxTouchPoints = navigator.maxTouchPoints || 1;
+
+  const isAndroid = /Android/.test(userAgent);
+  const isIOS =
+    /\b(iPad|iPhone|iPod)(?=;)/.test(userAgent) ||
+    (platform === "MacIntel" && maxTouchPoints > 1);
+
+  // Limit canvas size to 5 mega-pixels on mobile.
+  // Support: Android, iOS
+  (function checkCanvasSizeLimitation() {
+    if (isIOS || isAndroid) {
+      compatibilityParams.maxCanvasPixels = 5242880;
+    }
+  })();
+}
 
 const OptionKind = {
   VIEWER: 0x02,
@@ -24,23 +48,32 @@ const OptionKind = {
 };
 
 /**
- * PLEASE NOTE: To avoid introducing unnecessary dependencies, we specify the
- *              values below *explicitly* rather than relying on imported types.
+ * NOTE: These options are used to generate the `default_preferences.json` file,
+ *       see `OptionKind.PREFERENCE`, hence the values below must use only
+ *       primitive types and cannot rely on any imported types.
  */
 const defaultOptions = {
+  annotationEditorMode: {
+    /** @type {boolean} */
+    value:
+      typeof PDFJSDev === "undefined" || PDFJSDev.test("!PRODUCTION || TESTING")
+        ? 0
+        : -1,
+    kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
+  },
+  annotationMode: {
+    /** @type {number} */
+    value: 2,
+    kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
+  },
   cursorToolOnLoad: {
     /** @type {number} */
     value: 0,
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
   },
-  defaultUrl: {
-    /** @type {string} */
-    value: 'compressed.tracemonkey-pldi-09.pdf',
-    kind: OptionKind.VIEWER,
-  },
   defaultZoomValue: {
     /** @type {string} */
-    value: '',
+    value: "",
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
   },
   disableHistory: {
@@ -53,27 +86,24 @@ const defaultOptions = {
     value: false,
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
   },
-  /**
-   * The `disablePreferences` is, conditionally, defined below.
-   */
+  enablePermissions: {
+    /** @type {boolean} */
+    value: false,
+    kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
+  },
   enablePrintAutoRotate: {
     /** @type {boolean} */
-    value: false,
+    value: true,
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
   },
-  enableWebGL: {
+  enableScripting: {
     /** @type {boolean} */
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
-  },
-  eventBusDispatchToDOM: {
-    /** @type {boolean} */
-    value: false,
+    value: typeof PDFJSDev === "undefined" || !PDFJSDev.test("CHROME"),
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
   },
   externalLinkRel: {
     /** @type {string} */
-    value: 'noopener noreferrer nofollow',
+    value: "noopener noreferrer nofollow",
     kind: OptionKind.VIEWER,
   },
   externalLinkTarget: {
@@ -86,37 +116,45 @@ const defaultOptions = {
     value: false,
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
   },
+  ignoreDestinationZoom: {
+    /** @type {boolean} */
+    value: false,
+    kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
+  },
   imageResourcesPath: {
     /** @type {string} */
-    value: './images/',
+    value: "./images/",
     kind: OptionKind.VIEWER,
   },
-  /**
-   * The `locale` is, conditionally, defined below.
-   */
   maxCanvasPixels: {
     /** @type {number} */
     value: 16777216,
-    compatibility: viewerCompatibilityParams.maxCanvasPixels,
     kind: OptionKind.VIEWER,
+  },
+  forcePageColors: {
+    /** @type {boolean} */
+    value: false,
+    kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
+  },
+  pageColorsBackground: {
+    /** @type {string} */
+    value: "Canvas",
+    kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
+  },
+  pageColorsForeground: {
+    /** @type {string} */
+    value: "CanvasText",
+    kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
   },
   pdfBugEnabled: {
     /** @type {boolean} */
-    value: false,
+    value: typeof PDFJSDev === "undefined" || !PDFJSDev.test("PRODUCTION"),
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
   },
-  /**
-   * The `printResolution` is, conditionally, defined below.
-   */
-  renderer: {
-    /** @type {string} */
-    value: 'canvas',
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
-  },
-  renderInteractiveForms: {
-    /** @type {boolean} */
-    value: false,
-    kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
+  printResolution: {
+    /** @type {number} */
+    value: 150,
+    kind: OptionKind.VIEWER,
   },
   sidebarViewOnLoad: {
     /** @type {number} */
@@ -143,6 +181,11 @@ const defaultOptions = {
     value: false,
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
   },
+  viewerCssTheme: {
+    /** @type {number} */
+    value: typeof PDFJSDev !== "undefined" && PDFJSDev.test("CHROME") ? 2 : 0,
+    kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
+  },
   viewOnLoad: {
     /** @type {boolean} */
     value: 0,
@@ -156,20 +199,16 @@ const defaultOptions = {
   },
   cMapUrl: {
     /** @type {string} */
-    value: (typeof PDFJSDev === 'undefined' || !PDFJSDev.test('PRODUCTION') ?
-            '../external/bcmaps/' : '../web/cmaps/'),
+    value:
+      typeof PDFJSDev === "undefined" || !PDFJSDev.test("PRODUCTION")
+        ? "../external/bcmaps/"
+        : "../web/cmaps/",
     kind: OptionKind.API,
   },
   disableAutoFetch: {
     /** @type {boolean} */
     value: false,
     kind: OptionKind.API + OptionKind.PREFERENCE,
-  },
-  disableCreateObjectURL: {
-    /** @type {boolean} */
-    value: false,
-    compatibility: apiCompatibilityParams.disableCreateObjectURL,
-    kind: OptionKind.API,
   },
   disableFontFace: {
     /** @type {boolean} */
@@ -188,7 +227,17 @@ const defaultOptions = {
   },
   docBaseUrl: {
     /** @type {string} */
-    value: '',
+    value: "",
+    kind: OptionKind.API,
+  },
+  enableXfa: {
+    /** @type {boolean} */
+    value: true,
+    kind: OptionKind.API + OptionKind.PREFERENCE,
+  },
+  fontExtraProperties: {
+    /** @type {boolean} */
+    value: false,
     kind: OptionKind.API,
   },
   isEvalSupported: {
@@ -206,6 +255,14 @@ const defaultOptions = {
     value: false,
     kind: OptionKind.API,
   },
+  standardFontDataUrl: {
+    /** @type {string} */
+    value:
+      typeof PDFJSDev === "undefined" || !PDFJSDev.test("PRODUCTION")
+        ? "../external/standard_fonts/"
+        : "../web/standard_fonts/",
+    kind: OptionKind.API,
+  },
   verbosity: {
     /** @type {number} */
     value: 1,
@@ -219,26 +276,59 @@ const defaultOptions = {
   },
   workerSrc: {
     /** @type {string} */
-    value: (typeof PDFJSDev === 'undefined' || !PDFJSDev.test('PRODUCTION') ?
-            '../src/worker_loader.js' : '../build/pdf.worker.js'),
+    value:
+      typeof PDFJSDev === "undefined" || !PDFJSDev.test("PRODUCTION")
+        ? "../src/worker_loader.js"
+        : "../build/pdf.worker.js",
     kind: OptionKind.WORKER,
   },
 };
-if (typeof PDFJSDev === 'undefined' ||
-    PDFJSDev.test('!PRODUCTION || (GENERIC && !LIB)')) {
+if (
+  typeof PDFJSDev === "undefined" ||
+  PDFJSDev.test("!PRODUCTION || GENERIC")
+) {
+  defaultOptions.defaultUrl = {
+    /** @type {string} */
+    value: "compressed.tracemonkey-pldi-09.pdf",
+    kind: OptionKind.VIEWER,
+  };
   defaultOptions.disablePreferences = {
     /** @type {boolean} */
-    value: false,
+    value: typeof PDFJSDev !== "undefined" && PDFJSDev.test("TESTING"),
     kind: OptionKind.VIEWER,
   };
   defaultOptions.locale = {
     /** @type {string} */
-    value: (typeof navigator !== 'undefined' ? navigator.language : 'en-US'),
+    value: navigator.language || "en-US",
     kind: OptionKind.VIEWER,
   };
-  defaultOptions.printResolution = {
-    /** @type {number} */
-    value: 150,
+  defaultOptions.renderer = {
+    /** @type {string} */
+    value: "canvas",
+    kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
+  };
+  defaultOptions.sandboxBundleSrc = {
+    /** @type {string} */
+    value:
+      typeof PDFJSDev === "undefined" || !PDFJSDev.test("PRODUCTION")
+        ? "../build/dev-sandbox/pdf.sandbox.js"
+        : "../build/pdf.sandbox.js",
+    kind: OptionKind.VIEWER,
+  };
+} else if (PDFJSDev.test("CHROME")) {
+  defaultOptions.defaultUrl = {
+    /** @type {string} */
+    value: "",
+    kind: OptionKind.VIEWER,
+  };
+  defaultOptions.disableTelemetry = {
+    /** @type {boolean} */
+    value: false,
+    kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
+  };
+  defaultOptions.sandboxBundleSrc = {
+    /** @type {string} */
+    value: "../build/pdf.sandbox.js",
     kind: OptionKind.VIEWER,
   };
 }
@@ -247,7 +337,7 @@ const userOptions = Object.create(null);
 
 class AppOptions {
   constructor() {
-    throw new Error('Cannot initialize AppOptions.');
+    throw new Error("Cannot initialize AppOptions.");
   }
 
   static get(name) {
@@ -257,7 +347,7 @@ class AppOptions {
     }
     const defaultOption = defaultOptions[name];
     if (defaultOption !== undefined) {
-      return (defaultOption.compatibility || defaultOption.value);
+      return compatibilityParams[name] ?? defaultOption.value;
     }
     return undefined;
   }
@@ -271,10 +361,14 @@ class AppOptions {
           continue;
         }
         if (kind === OptionKind.PREFERENCE) {
-          const value = defaultOption.value, valueType = typeof value;
+          const value = defaultOption.value,
+            valueType = typeof value;
 
-          if (valueType === 'boolean' || valueType === 'string' ||
-              (valueType === 'number' && Number.isInteger(value))) {
+          if (
+            valueType === "boolean" ||
+            valueType === "string" ||
+            (valueType === "number" && Number.isInteger(value))
+          ) {
             options[name] = value;
             continue;
           }
@@ -282,8 +376,10 @@ class AppOptions {
         }
       }
       const userOption = userOptions[name];
-      options[name] = (userOption !== undefined ? userOption :
-                       (defaultOption.compatibility || defaultOption.value));
+      options[name] =
+        userOption !== undefined
+          ? userOption
+          : compatibilityParams[name] ?? defaultOption.value;
     }
     return options;
   }
@@ -292,12 +388,22 @@ class AppOptions {
     userOptions[name] = value;
   }
 
+  static setAll(options) {
+    for (const name in options) {
+      userOptions[name] = options[name];
+    }
+  }
+
   static remove(name) {
     delete userOptions[name];
   }
+
+  /**
+   * @ignore
+   */
+  static _hasUserOptions() {
+    return Object.keys(userOptions).length > 0;
+  }
 }
 
-export {
-  AppOptions,
-  OptionKind,
-};
+export { AppOptions, compatibilityParams, OptionKind };

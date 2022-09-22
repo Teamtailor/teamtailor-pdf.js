@@ -7,7 +7,7 @@ After doing changes in this repo, run `npm install` then `./node_modules/.bin/gu
 
 [PDF.js](https://mozilla.github.io/pdf.js/) is a Portable Document Format (PDF) viewer that is built with HTML5.
 
-PDF.js is community-driven and supported by Mozilla Labs. Our goal is to
+PDF.js is community-driven and supported by Mozilla. Our goal is to
 create a general-purpose, web standards-based platform for parsing and
 rendering PDFs.
 
@@ -16,19 +16,25 @@ rendering PDFs.
 PDF.js is an open source project and always looking for more contributors. To
 get involved, visit:
 
-- [Issue Reporting Guide](https://github.com/mozilla/pdf.js/blob/master/.github/CONTRIBUTING.md)
-- [Code Contribution Guide](https://github.com/mozilla/pdf.js/wiki/Contributing)
-- [Frequently Asked Questions](https://github.com/mozilla/pdf.js/wiki/Frequently-Asked-Questions)
-- [Good Beginner Bugs](https://github.com/mozilla/pdf.js/issues?direction=desc&labels=5-good-beginner-bug&page=1&sort=created&state=open)
-- [Projects](https://github.com/mozilla/pdf.js/projects)
++ [Issue Reporting Guide](https://github.com/mozilla/pdf.js/blob/master/.github/CONTRIBUTING.md)
++ [Code Contribution Guide](https://github.com/mozilla/pdf.js/wiki/Contributing)
++ [Frequently Asked Questions](https://github.com/mozilla/pdf.js/wiki/Frequently-Asked-Questions)
++ [Good Beginner Bugs](https://github.com/mozilla/pdf.js/issues?direction=desc&labels=good-beginner-bug&page=1&sort=created&state=open)
++ [Projects](https://github.com/mozilla/pdf.js/projects)
 
-Feel free to stop by #pdfjs on irc.mozilla.org for questions or guidance.
+Feel free to stop by our [Matrix room](https://chat.mozilla.org/#/room/#pdfjs:mozilla.org) for questions or guidance.
 
 ## Getting Started
 
 ### Online demo
 
-- https://mozilla.github.io/pdf.js/web/viewer.html
+Please note that the "Modern browsers" version assumes native support for
+features such as optional chaining, nullish coalescing,
+and private `class` fields/methods.
+
++ Modern browsers: https://mozilla.github.io/pdf.js/web/viewer.html
+
++ Older browsers: https://mozilla.github.io/pdf.js/legacy/web/viewer.html
 
 ### Browser Extensions
 
@@ -70,7 +76,7 @@ and then you can open:
 
 - http://localhost:8888/web/viewer.html
 
-Please keep in mind that this requires an ES6 compatible browser; refer to [Building PDF.js](https://github.com/mozilla/pdf.js/blob/master/README.md#building-pdfjs) for usage with older browsers.
+Please keep in mind that this requires a modern and fully up-to-date browser; refer to [Building PDF.js](https://github.com/mozilla/pdf.js/blob/master/README.md#building-pdfjs) for non-development usage of the PDF.js library.
 
 It is also possible to view all test PDF files on the right side by opening:
 
@@ -83,7 +89,11 @@ viewer, run:
 
     $ gulp generic
 
-This will generate `pdf.js` and `pdf.worker.js` in the `build/generic/build/` directory.
+If you need to support older browsers, run:
+
+    $ gulp generic-legacy
+
+This will generate `pdf.js` and `pdf.worker.js` in the `build/generic/build/` directory (respectively `build/generic-legacy/build/`).
 Both scripts are needed but only `pdf.js` needs to be included since `pdf.worker.js` will
 be loaded by `pdf.js`. The PDF.js files are large and should be minified for production.
 
@@ -129,14 +139,14 @@ Check out our FAQs and get answers to common questions:
 
 - https://github.com/mozilla/pdf.js/wiki/Frequently-Asked-Questions
 
-Talk to us on IRC (Internet Relay Chat):
+Talk to us on Matrix:
 
-- #pdfjs on irc.mozilla.org
++ https://chat.mozilla.org/#/room/#pdfjs:mozilla.org
 
 File an issue:
 
 - https://github.com/mozilla/pdf.js/issues/new
 
-Follow us on twitter: @pdfjs
+Follow us on Twitter: @pdfjs
 
 - https://twitter.com/pdfjs
