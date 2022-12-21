@@ -2217,6 +2217,7 @@ if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
 
   const TEAMTAILOR_S3_BUCKET_REG_EX =
     /^https:\/\/teamtailor-[\w-]+\.s3\.[\w-]+\.amazonaws\.com$/;
+  const TEAMTAILOR_CDN_REG_EX = /^https:\/\/[\w-]+\.teamtailor-cdn\.com$/;
 
   validateFileURL = function validateFileURL(file) {
     if (file === undefined) {
@@ -2239,7 +2240,10 @@ if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
         return;
       }
 
-      if (TEAMTAILOR_S3_BUCKET_REG_EX.exec(origin)) {
+      if (
+        TEAMTAILOR_S3_BUCKET_REG_EX.exec(origin) ||
+        TEAMTAILOR_CDN_REG_EX.exec(origin)
+      ) {
         return;
       }
 
