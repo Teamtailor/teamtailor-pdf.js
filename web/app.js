@@ -2216,7 +2216,7 @@ if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
   const SAFE_HOSTED_VIEWER_ORIGINS = ["null", ".teamtailor.localhost"];
 
   const TEAMTAILOR_S3_BUCKET_REG_EX =
-    /^https:\/\/teamtailor-[\w-]+\.s3\.[\w-]+\.amazonaws\.com$/;
+    /^https:\/\/(teamtailor|tt-dev)-[\w-]+\.s3\.[\w-]+\.amazonaws\.com$/;
   const TEAMTAILOR_CDN_REG_EX = /^https:\/\/[\w-]+\.teamtailor-cdn\.com$/;
 
   validateFileURL = function validateFileURL(file) {
