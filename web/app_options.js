@@ -98,12 +98,12 @@ const defaultOptions = {
 
   annotationEditorMode: {
     /** @type {number} */
-    value: 0,
+    value: -1,
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
   },
   annotationMode: {
     /** @type {number} */
-    value: 2,
+    value: 0,
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
   },
   cursorToolOnLoad: {
@@ -169,7 +169,7 @@ const defaultOptions = {
   },
   enableScripting: {
     /** @type {boolean} */
-    value: typeof PDFJSDev === "undefined" || !PDFJSDev.test("CHROME"),
+    value: false,
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
   },
   enableStampEditor: {
@@ -177,7 +177,7 @@ const defaultOptions = {
     // in Firefox release, but it has to be temporary.
     // TODO: remove it when unnecessary.
     /** @type {boolean} */
-    value: true,
+    value: false,
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
   },
   externalLinkRel: {
@@ -187,7 +187,7 @@ const defaultOptions = {
   },
   externalLinkTarget: {
     /** @type {number} */
-    value: 0,
+    value: 2,
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
   },
   highlightEditorColors: {
@@ -245,7 +245,7 @@ const defaultOptions = {
   },
   sidebarViewOnLoad: {
     /** @type {number} */
-    value: -1,
+    value: 0,
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
   },
   scrollModeOnLoad: {
