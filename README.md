@@ -3,6 +3,12 @@
 This is a mirrored version of the original repository. In order to get the implementation to work with s3 we've changed the source code and whitelisted a couple of our domains.
 After doing changes in this repo, run `npm install` then `npx gulp minified` command and to deploy the changes you can use the aws cli like this `aws s3 sync build/minified s3://scripts.teamtailor-cdn.com/pdf.js/v5 --acl public-read`, just remember to increment the version number to bust the cache.
 
+You [might need to install some extra dependencies](https://github.com/mozilla/pdf.js/issues/14402#issuecomment-1001373658) to get `npm install` to work. Here are some commands that might help you:
+
+```bash
+brew install pkg-config cairo pango libpng jpeg giflib librsvg
+```
+
 # PDF.js [![Build Status](https://travis-ci.org/mozilla/pdf.js.svg?branch=master)](https://travis-ci.org/mozilla/pdf.js)
 
 [PDF.js](https://mozilla.github.io/pdf.js/) is a Portable Document Format (PDF) viewer that is built with HTML5.
