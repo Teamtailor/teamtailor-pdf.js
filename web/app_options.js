@@ -393,7 +393,7 @@ if (typeof PDFJSDev === "undefined" || !PDFJSDev.test("MOZCENTRAL")) {
   };
   defaultOptions.viewerCssTheme = {
     /** @type {number} */
-    value: typeof PDFJSDev !== "undefined" && PDFJSDev.test("CHROME") ? 2 : 0,
+    value: 1,
     kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
   };
 }
