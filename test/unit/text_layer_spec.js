@@ -13,35 +13,28 @@
  * limitations under the License.
  */
 
-import {
-  renderTextLayer,
-  TextLayerRenderTask,
-} from "../../src/display/text_layer.js";
 import { buildGetDocumentParams } from "./test_utils.js";
 import { getDocument } from "../../src/display/api.js";
-import { isNodeJS } from "../../src/shared/is_node.js";
+import { isNodeJS } from "../../src/shared/util.js";
+import { TextLayer } from "../../src/display/text_layer.js";
 
 describe("textLayer", function () {
   it("creates textLayer from ReadableStream", async function () {
     if (isNodeJS) {
-      pending("document.createDocumentFragment is not supported in Node.js.");
+      pending("document.createElement is not supported in Node.js.");
     }
     const loadingTask = getDocument(buildGetDocumentParams("basicapi.pdf"));
     const pdfDocument = await loadingTask.promise;
     const page = await pdfDocument.getPage(1);
 
-    const textContentItemsStr = [];
-
-    const textLayerRenderTask = renderTextLayer({
-      textContentStream: page.streamTextContent(),
-      container: document.createDocumentFragment(),
-      viewport: page.getViewport(),
-      textContentItemsStr,
+    const textLayer = new TextLayer({
+      textContentSource: page.streamTextContent(),
+      container: document.createElement("div"),
+      viewport: page.getViewport({ scale: 1 }),
     });
-    expect(textLayerRenderTask instanceof TextLayerRenderTask).toEqual(true);
+    await textLayer.render();
 
-    await textLayerRenderTask.promise;
-    expect(textContentItemsStr).toEqual([
+    expect(textLayer.textContentItemsStr).toEqual([
       "Table Of Content",
       "",
       "Chapter 1",
@@ -58,5 +51,43 @@ describe("textLayer", function () {
       "",
       "page 1 / 3",
     ]);
+
+    await loadingTask.destroy();
+  });
+
+  it("creates textLayer from TextContent", async function () {
+    if (isNodeJS) {
+      pending("document.createElement is not supported in Node.js.");
+    }
+    const loadingTask = getDocument(buildGetDocumentParams("basicapi.pdf"));
+    const pdfDocument = await loadingTask.promise;
+    const page = await pdfDocument.getPage(1);
+
+    const textLayer = new TextLayer({
+      textContentSource: await page.getTextContent(),
+      container: document.createElement("div"),
+      viewport: page.getViewport({ scale: 1 }),
+    });
+    await textLayer.render();
+
+    expect(textLayer.textContentItemsStr).toEqual([
+      "Table Of Content",
+      "",
+      "Chapter 1",
+      " ",
+      "..........................................................",
+      " ",
+      "2",
+      "",
+      "Paragraph 1.1",
+      " ",
+      "......................................................",
+      " ",
+      "3",
+      "",
+      "page 1 / 3",
+    ]);
+
+    await loadingTask.destroy();
   });
 });

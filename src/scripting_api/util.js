@@ -65,7 +65,7 @@ class Util extends PDFObject {
     const ZERO = 4;
     const HASH = 8;
     let i = 0;
-    return args[0].replace(
+    return args[0].replaceAll(
       pattern,
       function (match, nDecSep, cFlags, nWidth, nPrecision, cConvChar) {
         // cConvChar must be one of d, f, s, x
@@ -148,17 +148,17 @@ class Util extends PDFObject {
 
         let decPart = "";
         if (cConvChar === "f") {
-          if (nPrecision !== undefined) {
-            decPart = Math.abs(arg - intPart).toFixed(nPrecision);
-          } else {
-            decPart = Math.abs(arg - intPart).toString();
-          }
+          decPart =
+            nPrecision !== undefined
+              ? Math.abs(arg - intPart).toFixed(nPrecision)
+              : Math.abs(arg - intPart).toString();
           if (decPart.length > 2) {
             decPart = `${decimalSep}${decPart.substring(2)}`;
-          } else if (cFlags & HASH) {
-            decPart = ".";
           } else {
-            decPart = "";
+            if (decPart === "1") {
+              intPart += Math.sign(arg);
+            }
+            decPart = cFlags & HASH ? "." : "";
           }
         }
 
@@ -212,66 +212,26 @@ class Util extends PDFObject {
     }
 
     const handlers = {
-      mmmm: data => {
-        return this._months[data.month];
-      },
-      mmm: data => {
-        return this._months[data.month].substring(0, 3);
-      },
-      mm: data => {
-        return (data.month + 1).toString().padStart(2, "0");
-      },
-      m: data => {
-        return (data.month + 1).toString();
-      },
-      dddd: data => {
-        return this._days[data.dayOfWeek];
-      },
-      ddd: data => {
-        return this._days[data.dayOfWeek].substring(0, 3);
-      },
-      dd: data => {
-        return data.day.toString().padStart(2, "0");
-      },
-      d: data => {
-        return data.day.toString();
-      },
-      yyyy: data => {
-        return data.year.toString();
-      },
-      yy: data => {
-        return (data.year % 100).toString().padStart(2, "0");
-      },
-      HH: data => {
-        return data.hours.toString().padStart(2, "0");
-      },
-      H: data => {
-        return data.hours.toString();
-      },
-      hh: data => {
-        return (1 + ((data.hours + 11) % 12)).toString().padStart(2, "0");
-      },
-      h: data => {
-        return (1 + ((data.hours + 11) % 12)).toString();
-      },
-      MM: data => {
-        return data.minutes.toString().padStart(2, "0");
-      },
-      M: data => {
-        return data.minutes.toString();
-      },
-      ss: data => {
-        return data.seconds.toString().padStart(2, "0");
-      },
-      s: data => {
-        return data.seconds.toString();
-      },
-      tt: data => {
-        return data.hours < 12 ? "am" : "pm";
-      },
-      t: data => {
-        return data.hours < 12 ? "a" : "p";
-      },
+      mmmm: data => this._months[data.month],
+      mmm: data => this._months[data.month].substring(0, 3),
+      mm: data => (data.month + 1).toString().padStart(2, "0"),
+      m: data => (data.month + 1).toString(),
+      dddd: data => this._days[data.dayOfWeek],
+      ddd: data => this._days[data.dayOfWeek].substring(0, 3),
+      dd: data => data.day.toString().padStart(2, "0"),
+      d: data => data.day.toString(),
+      yyyy: data => data.year.toString(),
+      yy: data => (data.year % 100).toString().padStart(2, "0"),
+      HH: data => data.hours.toString().padStart(2, "0"),
+      H: data => data.hours.toString(),
+      hh: data => (1 + ((data.hours + 11) % 12)).toString().padStart(2, "0"),
+      h: data => (1 + ((data.hours + 11) % 12)).toString(),
+      MM: data => data.minutes.toString().padStart(2, "0"),
+      M: data => data.minutes.toString(),
+      ss: data => data.seconds.toString().padStart(2, "0"),
+      s: data => data.seconds.toString(),
+      tt: data => (data.hours < 12 ? "am" : "pm"),
+      t: data => (data.hours < 12 ? "a" : "p"),
     };
 
     const data = {
@@ -286,7 +246,7 @@ class Util extends PDFObject {
 
     const patterns =
       /(mmmm|mmm|mm|m|dddd|ddd|dd|d|yyyy|yy|HH|H|hh|h|MM|M|ss|s|tt|t|\\.)/g;
-    return cFormat.replace(patterns, function (match, pattern) {
+    return cFormat.replaceAll(patterns, function (match, pattern) {
       if (pattern in handlers) {
         return handlers[pattern](data);
       }
@@ -296,6 +256,7 @@ class Util extends PDFObject {
 
   printx(cFormat, cSource) {
     // case
+    cSource = (cSource ?? "").toString();
     const handlers = [x => x, x => x.toUpperCase(), x => x.toLowerCase()];
     const buf = [];
     let i = 0;
@@ -521,12 +482,12 @@ class Util extends PDFObject {
       };
 
       // escape the string
-      const escapedFormat = cFormat.replace(/[.*+\-?^${}()|[\]\\]/g, "\\$&");
+      const escapedFormat = cFormat.replaceAll(/[.*+\-?^${}()|[\]\\]/g, "\\$&");
       const patterns =
         /(mmmm|mmm|mm|m|dddd|ddd|dd|d|yyyy|yy|HH|H|hh|h|MM|M|ss|s|tt|t)/g;
       const actions = [];
 
-      const re = escapedFormat.replace(
+      const re = escapedFormat.replaceAll(
         patterns,
         function (match, patternElement) {
           const { pattern, action } = handlers[patternElement];

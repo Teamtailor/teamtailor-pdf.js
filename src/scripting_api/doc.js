@@ -16,7 +16,10 @@
 import { createActionsMap } from "./common.js";
 import { PDFObject } from "./pdf_object.js";
 import { PrintParams } from "./print_params.js";
+import { serializeError } from "./app_utils.js";
 import { ZoomType } from "./constants.js";
+
+const DOC_EXTERNAL = false;
 
 class InfoProxyHandler {
   static get(obj, prop) {
@@ -94,26 +97,59 @@ class Doc extends PDFObject {
     this._actions = createActionsMap(data.actions);
     this._globalEval = data.globalEval;
     this._pageActions = new Map();
+    this._userActivation = false;
+    this._disablePrinting = false;
+    this._disableSaving = false;
+  }
+
+  _initActions() {
+    const dontRun = new Set([
+      "WillClose",
+      "WillSave",
+      "DidSave",
+      "WillPrint",
+      "DidPrint",
+      "OpenAction",
+    ]);
+    // When a pdf has just been opened it doesn't really make sense
+    // to save it: it's up to the user to decide if they want to do that.
+    // A pdf can contain an action /FooBar which will trigger a save
+    // even if there are no WillSave/DidSave (which are themselves triggered
+    // after a save).
+    this._disableSaving = true;
+    for (const actionName of this._actions.keys()) {
+      if (!dontRun.has(actionName)) {
+        this._runActions(actionName);
+      }
+    }
+    this._runActions("OpenAction");
+    this._disableSaving = false;
   }
 
   _dispatchDocEvent(name) {
-    if (name === "Open") {
-      const dontRun = new Set([
-        "WillClose",
-        "WillSave",
-        "DidSave",
-        "WillPrint",
-        "DidPrint",
-        "OpenAction",
-      ]);
-      for (const actionName of this._actions.keys()) {
-        if (!dontRun.has(actionName)) {
-          this._runActions(actionName);
+    switch (name) {
+      case "Open":
+        this._disableSaving = true;
+        this._runActions("OpenAction");
+        this._disableSaving = false;
+        break;
+      case "WillPrint":
+        this._disablePrinting = true;
+        try {
+          this._runActions(name);
+        } catch (error) {
+          this._send(serializeError(error));
         }
-      }
-      this._runActions("OpenAction");
-    } else {
-      this._runActions(name);
+        this._send({ command: "WillPrintFinished" });
+        this._disablePrinting = false;
+        break;
+      case "WillSave":
+        this._disableSaving = true;
+        this._runActions(name);
+        this._disableSaving = false;
+        break;
+      default:
+        this._runActions(name);
     }
   }
 
@@ -272,7 +308,10 @@ class Doc extends PDFObject {
   }
 
   get external() {
-    return true;
+    // According to the specification this should be `true` in non-Acrobat
+    // applications, however we ignore that to avoid bothering users with
+    // an `alert`-dialog on document load (see issue 15509).
+    return DOC_EXTERNAL;
   }
 
   set external(_) {
@@ -356,6 +395,11 @@ class Doc extends PDFObject {
   }
 
   set layout(value) {
+    if (!this._userActivation) {
+      return;
+    }
+    this._userActivation = false;
+
     if (typeof value !== "string") {
       return;
     }
@@ -475,6 +519,11 @@ class Doc extends PDFObject {
   }
 
   set pageNum(value) {
+    if (!this._userActivation) {
+      return;
+    }
+    this._userActivation = false;
+
     if (typeof value !== "number" || value < 0 || value >= this._numPages) {
       return;
     }
@@ -623,6 +672,11 @@ class Doc extends PDFObject {
   }
 
   set zoomType(type) {
+    if (!this._userActivation) {
+      return;
+    }
+    this._userActivation = false;
+
     if (typeof type !== "string") {
       return;
     }
@@ -657,6 +711,11 @@ class Doc extends PDFObject {
   }
 
   set zoom(value) {
+    if (!this._userActivation) {
+      return;
+    }
+    this._userActivation = false;
+
     if (typeof value !== "number" || value < 8.33 || value > 6400) {
       return;
     }
@@ -876,8 +935,26 @@ class Doc extends PDFObject {
     for (const [name, field] of this._fields.entries()) {
       if (name.startsWith(fieldName)) {
         const finalPart = name.slice(len);
-        if (finalPart.match(pattern)) {
+        if (pattern.test(finalPart)) {
           children.push(field);
+        }
+      }
+    }
+    return children;
+  }
+
+  _getTerminalChildren(fieldName) {
+    // Get all the descendants which have a value.
+    const children = [];
+    const len = fieldName.length;
+    for (const [name, field] of this._fields.entries()) {
+      if (name.startsWith(fieldName)) {
+        const finalPart = name.slice(len);
+        if (
+          field.obj._hasValue &&
+          (finalPart === "" || finalPart.startsWith("."))
+        ) {
+          children.push(field.wrapped);
         }
       }
     }
@@ -950,10 +1027,9 @@ class Doc extends PDFObject {
   }
 
   getPrintParams() {
-    if (!this._printParams) {
-      this._printParams = new PrintParams({ lastPage: this._numPages - 1 });
-    }
-    return this._printParams;
+    return (this._printParams ||= new PrintParams({
+      lastPage: this._numPages - 1,
+    }));
   }
 
   getSound() {
@@ -1035,6 +1111,11 @@ class Doc extends PDFObject {
     bAnnotations = true,
     printParams = null
   ) {
+    if (this._disablePrinting || !this._userActivation) {
+      return;
+    }
+    this._userActivation = false;
+
     if (bUI && typeof bUI === "object") {
       nStart = bUI.nStart;
       nEnd = bUI.nEnd;
@@ -1055,17 +1136,9 @@ class Doc extends PDFObject {
       nEnd = printParams.lastPage;
     }
 
-    if (typeof nStart === "number") {
-      nStart = Math.max(0, Math.trunc(nStart));
-    } else {
-      nStart = 0;
-    }
+    nStart = typeof nStart === "number" ? Math.max(0, Math.trunc(nStart)) : 0;
 
-    if (typeof nEnd === "number") {
-      nEnd = Math.max(0, Math.trunc(nEnd));
-    } else {
-      nEnd = -1;
-    }
+    nEnd = typeof nEnd === "number" ? Math.max(0, Math.trunc(nEnd)) : -1;
 
     this._send({ command: "print", start: nStart, end: nEnd });
   }
@@ -1112,7 +1185,7 @@ class Doc extends PDFObject {
 
   resetForm(aFields = null) {
     // Handle the case resetForm({ aFields: ... })
-    if (aFields && typeof aFields === "object") {
+    if (aFields && typeof aFields === "object" && !Array.isArray(aFields)) {
       aFields = aFields.aFields;
     }
 

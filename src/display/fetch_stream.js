@@ -13,11 +13,7 @@
  * limitations under the License.
  */
 
-import {
-  AbortException,
-  assert,
-  createPromiseCapability,
-} from "../shared/util.js";
+import { AbortException, assert, warn } from "../shared/util.js";
 import {
   createResponseStatusError,
   extractFilenameFromHeader,
@@ -46,12 +42,23 @@ function createHeaders(httpHeaders) {
   const headers = new Headers();
   for (const property in httpHeaders) {
     const value = httpHeaders[property];
-    if (typeof value === "undefined") {
+    if (value === undefined) {
       continue;
     }
     headers.append(property, value);
   }
   return headers;
+}
+
+function getArrayBuffer(val) {
+  if (val instanceof Uint8Array) {
+    return val.buffer;
+  }
+  if (val instanceof ArrayBuffer) {
+    return val;
+  }
+  warn(`getArrayBuffer - unexpected data format: ${val}`);
+  return new Uint8Array(val).buffer;
 }
 
 /** @implements {IPDFStream} */
@@ -88,9 +95,8 @@ class PDFFetchStream {
   }
 
   cancelAllRequests(reason) {
-    if (this._fullRequestReader) {
-      this._fullRequestReader.cancel(reason);
-    }
+    this._fullRequestReader?.cancel(reason);
+
     for (const reader of this._rangeRequestReaders.slice(0)) {
       reader.cancel(reason);
     }
@@ -107,7 +113,7 @@ class PDFFetchStreamReader {
     const source = stream.source;
     this._withCredentials = source.withCredentials || false;
     this._contentLength = source.length;
-    this._headersCapability = createPromiseCapability();
+    this._headersCapability = Promise.withResolvers();
     this._disableRange = source.disableRange || false;
     this._rangeChunkSize = source.rangeChunkSize;
     if (!this._rangeChunkSize && !this._disableRange) {
@@ -136,9 +142,8 @@ class PDFFetchStreamReader {
         this._reader = response.body.getReader();
         this._headersCapability.resolve();
 
-        const getResponseHeader = name => {
-          return response.headers.get(name);
-        };
+        const getResponseHeader = name => response.headers.get(name);
+
         const { allowRangeRequests, suggestedLength } =
           validateRangeRequestCapabilities({
             getResponseHeader,
@@ -191,20 +196,16 @@ class PDFFetchStreamReader {
       return { value, done };
     }
     this._loaded += value.byteLength;
-    if (this.onProgress) {
-      this.onProgress({
-        loaded: this._loaded,
-        total: this._contentLength,
-      });
-    }
-    const buffer = new Uint8Array(value).buffer;
-    return { value: buffer, done: false };
+    this.onProgress?.({
+      loaded: this._loaded,
+      total: this._contentLength,
+    });
+
+    return { value: getArrayBuffer(value), done: false };
   }
 
   cancel(reason) {
-    if (this._reader) {
-      this._reader.cancel(reason);
-    }
+    this._reader?.cancel(reason);
     this._abortController.abort();
   }
 }
@@ -217,7 +218,7 @@ class PDFFetchStreamRangeReader {
     this._loaded = 0;
     const source = stream.source;
     this._withCredentials = source.withCredentials || false;
-    this._readCapability = createPromiseCapability();
+    this._readCapability = Promise.withResolvers();
     this._isStreamingSupported = !source.disableStream;
 
     this._abortController = new AbortController();
@@ -256,17 +257,13 @@ class PDFFetchStreamRangeReader {
       return { value, done };
     }
     this._loaded += value.byteLength;
-    if (this.onProgress) {
-      this.onProgress({ loaded: this._loaded });
-    }
-    const buffer = new Uint8Array(value).buffer;
-    return { value: buffer, done: false };
+    this.onProgress?.({ loaded: this._loaded });
+
+    return { value: getArrayBuffer(value), done: false };
   }
 
   cancel(reason) {
-    if (this._reader) {
-      this._reader.cancel(reason);
-    }
+    this._reader?.cancel(reason);
     this._abortController.abort();
   }
 }

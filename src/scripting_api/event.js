@@ -13,6 +13,11 @@
  * limitations under the License.
  */
 
+import {
+  USERACTIVATION_CALLBACKID,
+  USERACTIVATION_MAXTIME_VALIDITY,
+} from "./app_utils.js";
+
 class Event {
   constructor(data) {
     this.change = data.change || "";
@@ -39,10 +44,11 @@ class Event {
 }
 
 class EventDispatcher {
-  constructor(document, calculationOrder, objects) {
+  constructor(document, calculationOrder, objects, externalCall) {
     this._document = document;
     this._calculationOrder = calculationOrder;
     this._objects = objects;
+    this._externalCall = externalCall;
 
     this._document.obj._eventDispatcher = this;
     this._isCalculating = false;
@@ -66,7 +72,24 @@ class EventDispatcher {
     return `${prefix}${event.change}${postfix}`;
   }
 
+  userActivation() {
+    this._document.obj._userActivation = true;
+    this._externalCall("setTimeout", [
+      USERACTIVATION_CALLBACKID,
+      USERACTIVATION_MAXTIME_VALIDITY,
+    ]);
+  }
+
   dispatch(baseEvent) {
+    if (
+      typeof PDFJSDev !== "undefined" &&
+      PDFJSDev.test("TESTING") &&
+      baseEvent.name === "sandboxtripbegin"
+    ) {
+      this._externalCall("send", [{ command: "sandboxTripEnd" }]);
+      return;
+    }
+
     const id = baseEvent.id;
     if (!(id in this._objects)) {
       let event;
@@ -76,24 +99,38 @@ class EventDispatcher {
         event.name = baseEvent.name;
       }
       if (id === "doc") {
-        if (event.name === "Open") {
-          // Before running the Open event, we format all the fields
-          // (see bug 1766987).
+        const eventName = event.name;
+        if (eventName === "Open") {
+          // The user has decided to open this pdf, hence we enable
+          // userActivation.
+          this.userActivation();
+          // Initialize named actions before calling formatAll to avoid any
+          // errors in the case where a formatter is using one of those named
+          // actions (see #15818).
+          this._document.obj._initActions();
+          // Before running the Open event, we run the format callbacks but
+          // without changing the value of the fields.
+          // Acrobat does the same thing.
           this.formatAll();
+        }
+        if (
+          !["DidPrint", "DidSave", "WillPrint", "WillSave"].includes(eventName)
+        ) {
+          this.userActivation();
         }
         this._document.obj._dispatchDocEvent(event.name);
       } else if (id === "page") {
+        this.userActivation();
         this._document.obj._dispatchPageEvent(
           event.name,
           baseEvent.actions,
           baseEvent.pageNumber
         );
       } else if (id === "app" && baseEvent.name === "ResetForm") {
+        this.userActivation();
         for (const fieldId of baseEvent.ids) {
           const obj = this._objects[fieldId];
-          if (obj) {
-            obj.obj._reset();
-          }
+          obj?.obj._reset();
         }
       }
       return;
@@ -103,6 +140,8 @@ class EventDispatcher {
     const source = this._objects[id];
     const event = (globalThis.event = new Event(baseEvent));
     let savedChange;
+
+    this.userActivation();
 
     if (source.obj._isButton()) {
       source.obj._id = id;
@@ -116,6 +155,7 @@ class EventDispatcher {
       case "Keystroke":
         savedChange = {
           value: event.value,
+          changeEx: event.changeEx,
           change: event.change,
           selStart: event.selStart,
           selEnd: event.selEnd,
@@ -149,6 +189,16 @@ class EventDispatcher {
       if (event.willCommit) {
         this.runValidation(source, event);
       } else {
+        if (source.obj._isChoice) {
+          source.obj.value = savedChange.changeEx;
+          source.obj._send({
+            id: source.obj._id,
+            siblings: source.obj._siblings,
+            value: source.obj.value,
+          });
+          return;
+        }
+
         const value = (source.obj.value = this.mergeChange(event));
         let selStart, selEnd;
         if (
@@ -192,14 +242,8 @@ class EventDispatcher {
     // Run format actions if any for all the fields.
     const event = (globalThis.event = new Event({}));
     for (const source of Object.values(this._objects)) {
-      event.value = source.obj.value;
-      if (this.runActions(source, source, event, "Format")) {
-        source.obj._send({
-          id: source.obj._id,
-          siblings: source.obj._siblings,
-          formattedValue: event.value?.toString?.(),
-        });
-      }
+      event.value = source.obj._getValue();
+      this.runActions(source, source, event, "Format");
     }
   }
 
@@ -210,7 +254,7 @@ class EventDispatcher {
 
       this.runCalculate(source, event);
 
-      const savedValue = (event.value = source.obj.value);
+      const savedValue = (event.value = source.obj._getValue());
       let formattedValue = null;
 
       if (this.runActions(source, source, event, "Format")) {
@@ -232,6 +276,7 @@ class EventDispatcher {
         value: "",
         formattedValue: null,
         selRange: [0, 0],
+        focus: true, // Stay in the field.
       });
     }
   }
@@ -298,7 +343,7 @@ class EventDispatcher {
 
       event.value = null;
       const target = this._objects[targetId];
-      let savedValue = target.obj.value;
+      let savedValue = target.obj._getValue();
       this.runActions(source, target, event, "Calculate");
       if (!event.rc) {
         continue;
@@ -307,18 +352,23 @@ class EventDispatcher {
       if (event.value !== null) {
         // A new value has been calculated so set it.
         target.obj.value = event.value;
+      } else {
+        event.value = target.obj._getValue();
       }
 
-      event.value = target.obj.value;
       this.runActions(target, target, event, "Validate");
       if (!event.rc) {
-        if (target.obj.value !== savedValue) {
+        if (target.obj._getValue() !== savedValue) {
           target.wrapped.value = savedValue;
         }
         continue;
       }
 
-      savedValue = event.value = target.obj.value;
+      if (event.value === null) {
+        event.value = target.obj._getValue();
+      }
+
+      savedValue = target.obj._getValue();
       let formattedValue = null;
       if (this.runActions(target, target, event, "Format")) {
         formattedValue = event.value?.toString?.();

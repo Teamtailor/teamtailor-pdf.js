@@ -13,16 +13,8 @@
  * limitations under the License.
  */
 
-import {
-  FormatError,
-  info,
-  shadow,
-  unreachable,
-  Util,
-  warn,
-} from "../shared/util.js";
+import { FormatError, info, unreachable, Util } from "../shared/util.js";
 import { getCurrentTransform } from "./display_utils.js";
-import { isNodeJS } from "../shared/is_node.js";
 
 const PathType = {
   FILL: "Fill",
@@ -31,7 +23,7 @@ const PathType = {
 };
 
 function applyBoundingBox(ctx, bbox) {
-  if (!bbox || isNodeJS) {
+  if (!bbox) {
     return;
   }
   const width = bbox[2] - bbox[0];
@@ -140,13 +132,7 @@ class RadialAxialShadingPattern extends BaseShadingPattern {
 
       pattern = ctx.createPattern(tmpCanvas.canvas, "no-repeat");
       const domMatrix = new DOMMatrix(inverse);
-      try {
-        pattern.setTransform(domMatrix);
-      } catch (ex) {
-        // Avoid rendering breaking completely in Firefox 78 ESR,
-        // and in Node.js (see issue 13724).
-        warn(`RadialAxialShadingPattern.getPattern: "${ex?.message}".`);
-      }
+      pattern.setTransform(domMatrix);
     } else {
       // Shading fills are applied relative to the current matrix which is also
       // how canvas gradients work, so there's no need to do anything special
@@ -214,12 +200,7 @@ function drawTriangle(data, context, p1, p2, p3, c1, c2, c3) {
   let xb, cbr, cbg, cbb;
   for (let y = minY; y <= maxY; y++) {
     if (y < y2) {
-      let k;
-      if (y < y1) {
-        k = 0;
-      } else {
-        k = (y1 - y) / (y1 - y2);
-      }
+      const k = y < y1 ? 0 : (y1 - y) / (y1 - y2);
       xa = x1 - (x1 - x2) * k;
       car = c1r - (c1r - c2r) * k;
       cag = c1g - (c1g - c2g) * k;
@@ -470,13 +451,11 @@ const PaintType = {
 
 class TilingPattern {
   // 10in @ 300dpi shall be enough.
-  static get MAX_PATTERN_SIZE() {
-    return shadow(this, "MAX_PATTERN_SIZE", 3000);
-  }
+  static MAX_PATTERN_SIZE = 3000;
 
   constructor(IR, color, ctx, canvasGraphicsFactory, baseTransform) {
     this.operatorList = IR[2];
-    this.matrix = IR[3] || [1, 0, 0, 1, 0, 0];
+    this.matrix = IR[3];
     this.bbox = IR[4];
     this.xstep = IR[5];
     this.ystep = IR[6];
@@ -680,13 +659,8 @@ class TilingPattern {
     );
 
     const pattern = ctx.createPattern(temporaryPatternCanvas.canvas, "repeat");
-    try {
-      pattern.setTransform(domMatrix);
-    } catch (ex) {
-      // Avoid rendering breaking completely in Firefox 78 ESR,
-      // and in Node.js (see issue 13724).
-      warn(`TilingPattern.getPattern: "${ex?.message}".`);
-    }
+    pattern.setTransform(domMatrix);
+
     return pattern;
   }
 }

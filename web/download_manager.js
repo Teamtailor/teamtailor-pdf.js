@@ -47,11 +47,9 @@ function download(blobUrl, filename) {
  * @implements {IDownloadManager}
  */
 class DownloadManager {
-  constructor() {
-    this._openBlobUrls = new WeakMap();
-  }
+  #openBlobUrls = new WeakMap();
 
-  downloadUrl(url, filename) {
+  downloadUrl(url, filename, _options) {
     if (!createValidAbsoluteUrl(url, "http://example.com")) {
       console.error(`downloadUrl - not a valid URL: ${url}`);
       return; // restricted/invalid URL
@@ -69,15 +67,18 @@ class DownloadManager {
   /**
    * @returns {boolean} Indicating if the data was opened.
    */
-  openOrDownloadData(element, data, filename) {
+  openOrDownloadData(data, filename, dest = null) {
     const isPdfData = isPdfFile(filename);
     const contentType = isPdfData ? "application/pdf" : "";
 
-    if (isPdfData) {
-      let blobUrl = this._openBlobUrls.get(element);
+    if (
+      (typeof PDFJSDev === "undefined" || !PDFJSDev.test("COMPONENTS")) &&
+      isPdfData
+    ) {
+      let blobUrl = this.#openBlobUrls.get(data);
       if (!blobUrl) {
         blobUrl = URL.createObjectURL(new Blob([data], { type: contentType }));
-        this._openBlobUrls.set(element, blobUrl);
+        this.#openBlobUrls.set(data, blobUrl);
       }
       let viewerUrl;
       if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
@@ -92,6 +93,9 @@ class DownloadManager {
           "?file=" +
           encodeURIComponent(blobUrl + "#" + filename);
       }
+      if (dest) {
+        viewerUrl += `#${escape(dest)}`;
+      }
 
       try {
         window.open(viewerUrl);
@@ -101,7 +105,7 @@ class DownloadManager {
         // Release the `blobUrl`, since opening it failed, and fallback to
         // downloading the PDF file.
         URL.revokeObjectURL(blobUrl);
-        this._openBlobUrls.delete(element);
+        this.#openBlobUrls.delete(data);
       }
     }
 
@@ -109,7 +113,7 @@ class DownloadManager {
     return false;
   }
 
-  download(blob, url, filename) {
+  download(blob, url, filename, _options) {
     const blobUrl = URL.createObjectURL(blob);
     download(blobUrl, filename);
   }

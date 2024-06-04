@@ -14,20 +14,35 @@
  */
 
 import {
+  BaseException,
   bytesToString,
-  createPromiseCapability,
   createValidAbsoluteUrl,
-  escapeString,
   getModificationDate,
-  isArrayBuffer,
-  isAscii,
   string32,
   stringToBytes,
   stringToPDFString,
-  stringToUTF16BEString,
 } from "../../src/shared/util.js";
 
 describe("util", function () {
+  describe("BaseException", function () {
+    it("can initialize exception classes derived from BaseException", function () {
+      class DerivedException extends BaseException {
+        constructor(message) {
+          super(message, "DerivedException");
+          this.foo = "bar";
+        }
+      }
+
+      const exception = new DerivedException("Something went wrong");
+      expect(exception instanceof DerivedException).toEqual(true);
+      expect(exception instanceof BaseException).toEqual(true);
+      expect(exception.message).toEqual("Something went wrong");
+      expect(exception.name).toEqual("DerivedException");
+      expect(exception.foo).toEqual("bar");
+      expect(exception.stack).toContain("BaseExceptionClosure");
+    });
+  });
+
   describe("bytesToString", function () {
     it("handles non-array arguments", function () {
       expect(function () {
@@ -53,20 +68,6 @@ describe("util", function () {
       const string = "a".repeat(length);
 
       expect(bytesToString(bytes)).toEqual(string);
-    });
-  });
-
-  describe("isArrayBuffer", function () {
-    it("handles array buffer values", function () {
-      expect(isArrayBuffer(new ArrayBuffer(0))).toEqual(true);
-      expect(isArrayBuffer(new Uint8Array(0))).toEqual(true);
-    });
-
-    it("handles non-array buffer values", function () {
-      expect(isArrayBuffer("true")).toEqual(false);
-      expect(isArrayBuffer(1)).toEqual(false);
-      expect(isArrayBuffer(null)).toEqual(false);
-      expect(isArrayBuffer(undefined)).toEqual(false);
     });
   });
 
@@ -102,9 +103,19 @@ describe("util", function () {
       expect(stringToPDFString(str)).toEqual("string");
     });
 
+    it("handles incomplete UTF-16 big-endian strings", function () {
+      const str = "\xFE\xFF\x00\x73\x00\x74\x00\x72\x00\x69\x00\x6E\x00";
+      expect(stringToPDFString(str)).toEqual("strin");
+    });
+
     it("handles UTF-16 little-endian strings", function () {
       const str = "\xFF\xFE\x73\x00\x74\x00\x72\x00\x69\x00\x6E\x00\x67\x00";
       expect(stringToPDFString(str)).toEqual("string");
+    });
+
+    it("handles incomplete UTF-16 little-endian strings", function () {
+      const str = "\xFF\xFE\x73\x00\x74\x00\x72\x00\x69\x00\x6E\x00\x67";
+      expect(stringToPDFString(str)).toEqual("strin");
     });
 
     it("handles UTF-8 strings", function () {
@@ -136,6 +147,22 @@ describe("util", function () {
       // UTF-8
       const str4 = "\xEF\xBB\xBF";
       expect(stringToPDFString(str4)).toEqual("");
+    });
+
+    it("handles strings with language code", function () {
+      // ISO Latin 1
+      const str1 = "hello \x1benUS\x1bworld";
+      expect(stringToPDFString(str1)).toEqual("hello world");
+
+      // UTF-16BE
+      const str2 =
+        "\xFE\xFF\x00h\x00e\x00l\x00l\x00o\x00 \x00\x1b\x00e\x00n\x00U\x00S\x00\x1b\x00w\x00o\x00r\x00l\x00d";
+      expect(stringToPDFString(str2)).toEqual("hello world");
+
+      // UTF-16LE
+      const str3 =
+        "\xFF\xFEh\x00e\x00l\x00l\x00o\x00 \x00\x1b\x00e\x00n\x00U\x00S\x00\x1b\x00w\x00o\x00r\x00l\x00d\x00";
+      expect(stringToPDFString(str3)).toEqual("hello world");
     });
   });
 
@@ -215,71 +242,10 @@ describe("util", function () {
     });
   });
 
-  describe("createPromiseCapability", function () {
-    it("should resolve with correct data", async function () {
-      const promiseCapability = createPromiseCapability();
-      expect(promiseCapability.settled).toEqual(false);
-
-      promiseCapability.resolve({ test: "abc" });
-
-      const data = await promiseCapability.promise;
-      expect(promiseCapability.settled).toEqual(true);
-      expect(data).toEqual({ test: "abc" });
-    });
-
-    it("should reject with correct reason", async function () {
-      const promiseCapability = createPromiseCapability();
-      expect(promiseCapability.settled).toEqual(false);
-
-      promiseCapability.reject(new Error("reason"));
-
-      try {
-        await promiseCapability.promise;
-
-        // Shouldn't get here.
-        expect(false).toEqual(true);
-      } catch (reason) {
-        expect(promiseCapability.settled).toEqual(true);
-        expect(reason instanceof Error).toEqual(true);
-        expect(reason.message).toEqual("reason");
-      }
-    });
-  });
-
-  describe("escapeString", function () {
-    it("should escape (, ), \\n, \\r, and \\", function () {
-      expect(escapeString("((a\\a))\n(b(b\\b)\rb)")).toEqual(
-        "\\(\\(a\\\\a\\)\\)\\n\\(b\\(b\\\\b\\)\\rb\\)"
-      );
-    });
-  });
-
   describe("getModificationDate", function () {
     it("should get a correctly formatted date", function () {
       const date = new Date(Date.UTC(3141, 5, 9, 2, 6, 53));
       expect(getModificationDate(date)).toEqual("31410609020653");
-    });
-  });
-
-  describe("isAscii", function () {
-    it("handles ascii/non-ascii strings", function () {
-      expect(isAscii("hello world")).toEqual(true);
-      expect(isAscii("こんにちは世界の")).toEqual(false);
-      expect(isAscii("hello world in Japanese is こんにちは世界の")).toEqual(
-        false
-      );
-    });
-  });
-
-  describe("stringToUTF16BEString", function () {
-    it("should encode a string in UTF16BE with a BOM", function () {
-      expect(stringToUTF16BEString("hello world")).toEqual(
-        "\xfe\xff\0h\0e\0l\0l\0o\0 \0w\0o\0r\0l\0d"
-      );
-      expect(stringToUTF16BEString("こんにちは世界の")).toEqual(
-        "\xfe\xff\x30\x53\x30\x93\x30\x6b\x30\x61" +
-          "\x30\x6f\x4e\x16\x75\x4c\x30\x6e"
-      );
     });
   });
 });

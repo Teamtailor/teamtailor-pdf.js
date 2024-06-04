@@ -19,20 +19,14 @@ import {
   Util,
 } from "../../shared/util.js";
 import { AnnotationEditor } from "./editor.js";
-import { fitCurve } from "pdfjs-fitCurve";
+import { InkAnnotationElement } from "../annotation_layer.js";
+import { noContextMenu } from "../display_utils.js";
 import { opacityToHex } from "./tools.js";
-
-// The dimensions of the resizer is 15x15:
-// https://searchfox.org/mozilla-central/rev/1ce190047b9556c3c10ab4de70a0e61d893e2954/toolkit/content/minimal-xul.css#136-137
-// so each dimension must be greater than RESIZER_SIZE.
-const RESIZER_SIZE = 16;
 
 /**
  * Basic draw editor in order to generate an Ink annotation.
  */
 class InkEditor extends AnnotationEditor {
-  #aspectRatio = 0;
-
   #baseHeight = 0;
 
   #baseWidth = 0;
@@ -45,11 +39,15 @@ class InkEditor extends AnnotationEditor {
 
   #boundCanvasPointerdown = this.canvasPointerdown.bind(this);
 
+  #canvasContextMenuTimeoutId = null;
+
+  #currentPath2D = new Path2D();
+
   #disableEditing = false;
 
-  #isCanvasInitialized = false;
+  #hasSomethingToDraw = false;
 
-  #lastPoint = null;
+  #isCanvasInitialized = false;
 
   #observer = null;
 
@@ -65,9 +63,9 @@ class InkEditor extends AnnotationEditor {
 
   static _defaultThickness = 1;
 
-  static _l10nPromise;
-
   static _type = "ink";
+
+  static _editorType = AnnotationEditorType.INK;
 
   constructor(params) {
     super({ ...params, name: "inkEditor" });
@@ -76,22 +74,21 @@ class InkEditor extends AnnotationEditor {
     this.opacity = params.opacity || null;
     this.paths = [];
     this.bezierPath2D = [];
+    this.allRawPaths = [];
     this.currentPath = [];
     this.scaleFactor = 1;
     this.translationX = this.translationY = 0;
     this.x = 0;
     this.y = 0;
+    this._willKeepAspectRatio = true;
   }
 
-  static initialize(l10n) {
-    this._l10nPromise = new Map(
-      ["editor_ink_canvas_aria_label", "editor_ink_aria_label"].map(str => [
-        str,
-        l10n.get(str),
-      ])
-    );
+  /** @inheritdoc */
+  static initialize(l10n, uiManager) {
+    AnnotationEditor.initialize(l10n, uiManager);
   }
 
+  /** @inheritdoc */
   static updateDefaultParams(type, value) {
     switch (type) {
       case AnnotationEditorParamsType.INK_THICKNESS:
@@ -121,6 +118,7 @@ class InkEditor extends AnnotationEditor {
     }
   }
 
+  /** @inheritdoc */
   static get defaultPropertiesToUpdate() {
     return [
       [AnnotationEditorParamsType.INK_THICKNESS, InkEditor._defaultThickness],
@@ -160,16 +158,15 @@ class InkEditor extends AnnotationEditor {
    * @param {number} thickness
    */
   #updateThickness(thickness) {
+    const setThickness = th => {
+      this.thickness = th;
+      this.#fitToContent();
+    };
     const savedThickness = this.thickness;
-    this.parent.addCommands({
-      cmd: () => {
-        this.thickness = thickness;
-        this.#fitToContent();
-      },
-      undo: () => {
-        this.thickness = savedThickness;
-        this.#fitToContent();
-      },
+    this.addCommands({
+      cmd: setThickness.bind(this, thickness),
+      undo: setThickness.bind(this, savedThickness),
+      post: this._uiManager.updateUI.bind(this._uiManager, this),
       mustExec: true,
       type: AnnotationEditorParamsType.INK_THICKNESS,
       overwriteIfSameType: true,
@@ -182,16 +179,15 @@ class InkEditor extends AnnotationEditor {
    * @param {string} color
    */
   #updateColor(color) {
+    const setColor = col => {
+      this.color = col;
+      this.#redraw();
+    };
     const savedColor = this.color;
-    this.parent.addCommands({
-      cmd: () => {
-        this.color = color;
-        this.#redraw();
-      },
-      undo: () => {
-        this.color = savedColor;
-        this.#redraw();
-      },
+    this.addCommands({
+      cmd: setColor.bind(this, color),
+      undo: setColor.bind(this, savedColor),
+      post: this._uiManager.updateUI.bind(this._uiManager, this),
       mustExec: true,
       type: AnnotationEditorParamsType.INK_COLOR,
       overwriteIfSameType: true,
@@ -204,17 +200,16 @@ class InkEditor extends AnnotationEditor {
    * @param {number} opacity
    */
   #updateOpacity(opacity) {
+    const setOpacity = op => {
+      this.opacity = op;
+      this.#redraw();
+    };
     opacity /= 100;
     const savedOpacity = this.opacity;
-    this.parent.addCommands({
-      cmd: () => {
-        this.opacity = opacity;
-        this.#redraw();
-      },
-      undo: () => {
-        this.opacity = savedOpacity;
-        this.#redraw();
-      },
+    this.addCommands({
+      cmd: setOpacity.bind(this, opacity),
+      undo: setOpacity.bind(this, savedOpacity),
+      post: this._uiManager.updateUI.bind(this._uiManager, this),
       mustExec: true,
       type: AnnotationEditorParamsType.INK_OPACITY,
       overwriteIfSameType: true,
@@ -224,6 +219,9 @@ class InkEditor extends AnnotationEditor {
 
   /** @inheritdoc */
   rebuild() {
+    if (!this.parent) {
+      return;
+    }
     super.rebuild();
     if (this.div === null) {
       return;
@@ -258,10 +256,36 @@ class InkEditor extends AnnotationEditor {
     this.canvas.remove();
     this.canvas = null;
 
+    if (this.#canvasContextMenuTimeoutId) {
+      clearTimeout(this.#canvasContextMenuTimeoutId);
+      this.#canvasContextMenuTimeoutId = null;
+    }
+
     this.#observer.disconnect();
     this.#observer = null;
 
     super.remove();
+  }
+
+  setParent(parent) {
+    if (!this.parent && parent) {
+      // We've a parent hence the rescale will be handled thanks to the
+      // ResizeObserver.
+      this._uiManager.removeShouldRescale(this);
+    } else if (this.parent && parent === null) {
+      // The editor is removed from the DOM, hence we handle the rescale thanks
+      // to the onScaleChanging callback.
+      // This way, it'll be saved/printed correctly.
+      this._uiManager.addShouldRescale(this);
+    }
+    super.setParent(parent);
+  }
+
+  onScaleChanging() {
+    const [parentWidth, parentHeight] = this.parentDimensions;
+    const width = this.width * parentWidth;
+    const height = this.height * parentHeight;
+    this.setDimensions(width, height);
   }
 
   /** @inheritdoc */
@@ -271,9 +295,8 @@ class InkEditor extends AnnotationEditor {
     }
 
     super.enableEditMode();
-    this.div.draggable = false;
+    this._isDraggable = false;
     this.canvas.addEventListener("pointerdown", this.#boundCanvasPointerdown);
-    this.canvas.addEventListener("pointerup", this.#boundCanvasPointerup);
   }
 
   /** @inheritdoc */
@@ -283,19 +306,18 @@ class InkEditor extends AnnotationEditor {
     }
 
     super.disableEditMode();
-    this.div.draggable = !this.isEmpty();
+    this._isDraggable = !this.isEmpty();
     this.div.classList.remove("editing");
 
     this.canvas.removeEventListener(
       "pointerdown",
       this.#boundCanvasPointerdown
     );
-    this.canvas.removeEventListener("pointerup", this.#boundCanvasPointerup);
   }
 
   /** @inheritdoc */
   onceAdded() {
-    this.div.draggable = !this.isEmpty();
+    this._isDraggable = !this.isEmpty();
   }
 
   /** @inheritdoc */
@@ -307,14 +329,17 @@ class InkEditor extends AnnotationEditor {
   }
 
   #getInitialBBox() {
-    const { width, height, rotation } = this.parent.viewport;
-    switch (rotation) {
+    const {
+      parentRotation,
+      parentDimensions: [width, height],
+    } = this;
+    switch (parentRotation) {
       case 90:
-        return [0, width, width, height];
+        return [0, height, height, width];
       case 180:
         return [width, height, width, height];
       case 270:
-        return [height, 0, width, height];
+        return [width, 0, height, width];
       default:
         return [0, 0, width, height];
     }
@@ -324,12 +349,12 @@ class InkEditor extends AnnotationEditor {
    * Set line styles.
    */
   #setStroke() {
-    this.ctx.lineWidth =
-      (this.thickness * this.parent.scaleFactor) / this.scaleFactor;
-    this.ctx.lineCap = "round";
-    this.ctx.lineJoin = "round";
-    this.ctx.miterLimit = 10;
-    this.ctx.strokeStyle = `${this.color}${opacityToHex(this.opacity)}`;
+    const { ctx, color, opacity, thickness, parentScale, scaleFactor } = this;
+    ctx.lineWidth = (thickness * parentScale) / scaleFactor;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 10;
+    ctx.strokeStyle = `${color}${opacityToHex(opacity)}`;
   }
 
   /**
@@ -338,6 +363,15 @@ class InkEditor extends AnnotationEditor {
    * @param {number} y
    */
   #startDrawing(x, y) {
+    this.canvas.addEventListener("contextmenu", noContextMenu);
+    this.canvas.addEventListener("pointerleave", this.#boundCanvasPointerleave);
+    this.canvas.addEventListener("pointermove", this.#boundCanvasPointermove);
+    this.canvas.addEventListener("pointerup", this.#boundCanvasPointerup);
+    this.canvas.removeEventListener(
+      "pointerdown",
+      this.#boundCanvasPointerdown
+    );
+
     this.isEditing = true;
     if (!this.#isCanvasInitialized) {
       this.#isCanvasInitialized = true;
@@ -348,30 +382,14 @@ class InkEditor extends AnnotationEditor {
       this.opacity ??= InkEditor._defaultOpacity;
     }
     this.currentPath.push([x, y]);
-    this.#lastPoint = null;
+    this.#hasSomethingToDraw = false;
     this.#setStroke();
-    this.ctx.beginPath();
-    this.ctx.moveTo(x, y);
 
     this.#requestFrameCallback = () => {
-      if (!this.#requestFrameCallback) {
-        return;
+      this.#drawPoints();
+      if (this.#requestFrameCallback) {
+        window.requestAnimationFrame(this.#requestFrameCallback);
       }
-
-      if (this.#lastPoint) {
-        if (this.isEmpty()) {
-          this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-          this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        } else {
-          this.#redraw();
-        }
-
-        this.ctx.lineTo(...this.#lastPoint);
-        this.#lastPoint = null;
-        this.ctx.stroke();
-      }
-
-      window.requestAnimationFrame(this.#requestFrameCallback);
     };
     window.requestAnimationFrame(this.#requestFrameCallback);
   }
@@ -383,11 +401,40 @@ class InkEditor extends AnnotationEditor {
    */
   #draw(x, y) {
     const [lastX, lastY] = this.currentPath.at(-1);
-    if (x === lastX && y === lastY) {
+    if (this.currentPath.length > 1 && x === lastX && y === lastY) {
       return;
     }
-    this.currentPath.push([x, y]);
-    this.#lastPoint = [x, y];
+    const currentPath = this.currentPath;
+    let path2D = this.#currentPath2D;
+    currentPath.push([x, y]);
+    this.#hasSomethingToDraw = true;
+
+    if (currentPath.length <= 2) {
+      path2D.moveTo(...currentPath[0]);
+      path2D.lineTo(x, y);
+      return;
+    }
+
+    if (currentPath.length === 3) {
+      this.#currentPath2D = path2D = new Path2D();
+      path2D.moveTo(...currentPath[0]);
+    }
+
+    this.#makeBezierCurve(
+      path2D,
+      ...currentPath.at(-3),
+      ...currentPath.at(-2),
+      x,
+      y
+    );
+  }
+
+  #endPath() {
+    if (this.currentPath.length === 0) {
+      return;
+    }
+    const lastPoint = this.currentPath.at(-1);
+    this.#currentPath2D.lineTo(...lastPoint);
   }
 
   /**
@@ -396,38 +443,39 @@ class InkEditor extends AnnotationEditor {
    * @param {number} y
    */
   #stopDrawing(x, y) {
-    this.ctx.closePath();
     this.#requestFrameCallback = null;
 
     x = Math.min(Math.max(x, 0), this.canvas.width);
     y = Math.min(Math.max(y, 0), this.canvas.height);
 
-    const [lastX, lastY] = this.currentPath.at(-1);
-    if (x !== lastX || y !== lastY) {
-      this.currentPath.push([x, y]);
-    }
+    this.#draw(x, y);
+    this.#endPath();
 
     // Interpolate the path entered by the user with some
     // Bezier's curves in order to have a smoother path and
     // to reduce the data size used to draw it in the PDF.
     let bezier;
     if (this.currentPath.length !== 1) {
-      bezier = fitCurve(this.currentPath, 30, null);
+      bezier = this.#generateBezierPoints();
     } else {
       // We have only one point finally.
       const xy = [x, y];
       bezier = [[xy, xy.slice(), xy.slice(), xy]];
     }
-    const path2D = InkEditor.#buildPath2D(bezier);
-    this.currentPath.length = 0;
+    const path2D = this.#currentPath2D;
+    const currentPath = this.currentPath;
+    this.currentPath = [];
+    this.#currentPath2D = new Path2D();
 
     const cmd = () => {
+      this.allRawPaths.push(currentPath);
       this.paths.push(bezier);
       this.bezierPath2D.push(path2D);
-      this.rebuild();
+      this._uiManager.rebuild(this);
     };
 
     const undo = () => {
+      this.allRawPaths.pop();
       this.paths.pop();
       this.bezierPath2D.pop();
       if (this.paths.length === 0) {
@@ -441,7 +489,96 @@ class InkEditor extends AnnotationEditor {
       }
     };
 
-    this.parent.addCommands({ cmd, undo, mustExec: true });
+    this.addCommands({ cmd, undo, mustExec: true });
+  }
+
+  #drawPoints() {
+    if (!this.#hasSomethingToDraw) {
+      return;
+    }
+    this.#hasSomethingToDraw = false;
+
+    const thickness = Math.ceil(this.thickness * this.parentScale);
+    const lastPoints = this.currentPath.slice(-3);
+    const x = lastPoints.map(xy => xy[0]);
+    const y = lastPoints.map(xy => xy[1]);
+    const xMin = Math.min(...x) - thickness;
+    const xMax = Math.max(...x) + thickness;
+    const yMin = Math.min(...y) - thickness;
+    const yMax = Math.max(...y) + thickness;
+
+    const { ctx } = this;
+    ctx.save();
+
+    if (typeof PDFJSDev !== "undefined" && PDFJSDev.test("MOZCENTRAL")) {
+      // In Chrome, the clip() method doesn't work as expected.
+      ctx.clearRect(xMin, yMin, xMax - xMin, yMax - yMin);
+      ctx.beginPath();
+      ctx.rect(xMin, yMin, xMax - xMin, yMax - yMin);
+      ctx.clip();
+    } else {
+      ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+
+    for (const path of this.bezierPath2D) {
+      ctx.stroke(path);
+    }
+    ctx.stroke(this.#currentPath2D);
+
+    ctx.restore();
+  }
+
+  #makeBezierCurve(path2D, x0, y0, x1, y1, x2, y2) {
+    const prevX = (x0 + x1) / 2;
+    const prevY = (y0 + y1) / 2;
+    const x3 = (x1 + x2) / 2;
+    const y3 = (y1 + y2) / 2;
+
+    path2D.bezierCurveTo(
+      prevX + (2 * (x1 - prevX)) / 3,
+      prevY + (2 * (y1 - prevY)) / 3,
+      x3 + (2 * (x1 - x3)) / 3,
+      y3 + (2 * (y1 - y3)) / 3,
+      x3,
+      y3
+    );
+  }
+
+  #generateBezierPoints() {
+    const path = this.currentPath;
+    if (path.length <= 2) {
+      return [[path[0], path[0], path.at(-1), path.at(-1)]];
+    }
+
+    const bezierPoints = [];
+    let i;
+    let [x0, y0] = path[0];
+    for (i = 1; i < path.length - 2; i++) {
+      const [x1, y1] = path[i];
+      const [x2, y2] = path[i + 1];
+      const x3 = (x1 + x2) / 2;
+      const y3 = (y1 + y2) / 2;
+
+      // The quadratic is: [[x0, y0], [x1, y1], [x3, y3]].
+      // Convert the quadratic to a cubic
+      // (see https://fontforge.org/docs/techref/bezier.html#converting-truetype-to-postscript)
+      const control1 = [x0 + (2 * (x1 - x0)) / 3, y0 + (2 * (y1 - y0)) / 3];
+      const control2 = [x3 + (2 * (x1 - x3)) / 3, y3 + (2 * (y1 - y3)) / 3];
+
+      bezierPoints.push([[x0, y0], control1, control2, [x3, y3]]);
+
+      [x0, y0] = [x3, y3];
+    }
+
+    const [x1, y1] = path[i];
+    const [x2, y2] = path[i + 1];
+
+    // The quadratic is: [[x0, y0], [x1, y1], [x2, y2]].
+    const control1 = [x0 + (2 * (x1 - x0)) / 3, y0 + (2 * (y1 - y0)) / 3];
+    const control2 = [x2 + (2 * (x1 - x2)) / 3, y2 + (2 * (y1 - y2)) / 3];
+
+    bezierPoints.push([[x0, y0], control1, control2, [x2, y2]]);
+    return bezierPoints;
   }
 
   /**
@@ -458,6 +595,7 @@ class InkEditor extends AnnotationEditor {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     this.#updateTransform();
+
     for (const path of this.bezierPath2D) {
       ctx.stroke(path);
     }
@@ -483,19 +621,23 @@ class InkEditor extends AnnotationEditor {
     this.div.classList.add("disabled");
 
     this.#fitToContent(/* firstTime = */ true);
+    this.select();
 
     this.parent.addInkEditorIfNeeded(/* isCommitting = */ true);
 
-    // When commiting, the position of this editor is changed, hence we must
+    // When committing, the position of this editor is changed, hence we must
     // move it to the right position in the DOM.
-    this.parent.moveEditorInDOM(this);
-    // After the div has been moved in the DOM, the focus may have been stolen
-    // by document.body, hence we just keep it here.
-    this.div.focus();
+    this.moveInDOM();
+    this.div.focus({
+      preventScroll: true /* See issue #15744 */,
+    });
   }
 
   /** @inheritdoc */
   focusin(event) {
+    if (!this._focusEventsAllowed) {
+      return;
+    }
     super.focusin(event);
     this.enableEditMode();
   }
@@ -513,14 +655,13 @@ class InkEditor extends AnnotationEditor {
     // Since it's the last child, there's no need to give it a higher z-index.
     this.setInForeground();
 
-    if (event.type !== "mouse") {
-      this.div.focus();
+    event.preventDefault();
+
+    if (!this.div.contains(document.activeElement)) {
+      this.div.focus({
+        preventScroll: true /* See issue #17327 */,
+      });
     }
-
-    event.stopPropagation();
-
-    this.canvas.addEventListener("pointerleave", this.#boundCanvasPointerleave);
-    this.canvas.addEventListener("pointermove", this.#boundCanvasPointermove);
 
     this.#startDrawing(event.offsetX, event.offsetY);
   }
@@ -530,7 +671,7 @@ class InkEditor extends AnnotationEditor {
    * @param {PointerEvent} event
    */
   canvasPointermove(event) {
-    event.stopPropagation();
+    event.preventDefault();
     this.#draw(event.offsetX, event.offsetY);
   }
 
@@ -539,17 +680,8 @@ class InkEditor extends AnnotationEditor {
    * @param {PointerEvent} event
    */
   canvasPointerup(event) {
-    if (event.button !== 0) {
-      return;
-    }
-    if (this.isInEditMode() && this.currentPath.length !== 0) {
-      event.stopPropagation();
-      this.#endDrawing(event);
-
-      // Since the ink editor covers all of the page and we want to be able
-      // to select another editor, we just put this one in the background.
-      this.setInBackground();
-    }
+    event.preventDefault();
+    this.#endDrawing(event);
   }
 
   /**
@@ -558,7 +690,6 @@ class InkEditor extends AnnotationEditor {
    */
   canvasPointerleave(event) {
     this.#endDrawing(event);
-    this.setInBackground();
   }
 
   /**
@@ -566,8 +697,6 @@ class InkEditor extends AnnotationEditor {
    * @param {PointerEvent} event
    */
   #endDrawing(event) {
-    this.#stopDrawing(event.offsetX, event.offsetY);
-
     this.canvas.removeEventListener(
       "pointerleave",
       this.#boundCanvasPointerleave
@@ -576,8 +705,26 @@ class InkEditor extends AnnotationEditor {
       "pointermove",
       this.#boundCanvasPointermove
     );
+    this.canvas.removeEventListener("pointerup", this.#boundCanvasPointerup);
+    this.canvas.addEventListener("pointerdown", this.#boundCanvasPointerdown);
 
-    this.parent.addToAnnotationStorage(this);
+    // Slight delay to avoid the context menu to appear (it can happen on a long
+    // tap with a pen).
+    if (this.#canvasContextMenuTimeoutId) {
+      clearTimeout(this.#canvasContextMenuTimeoutId);
+    }
+    this.#canvasContextMenuTimeoutId = setTimeout(() => {
+      this.#canvasContextMenuTimeoutId = null;
+      this.canvas.removeEventListener("contextmenu", noContextMenu);
+    }, 10);
+
+    this.#stopDrawing(event.offsetX, event.offsetY);
+
+    this.addToAnnotationStorage();
+
+    // Since the ink editor covers all of the page and we want to be able
+    // to select another editor, we just put this one in the background.
+    this.setInBackground();
   }
 
   /**
@@ -587,10 +734,8 @@ class InkEditor extends AnnotationEditor {
     this.canvas = document.createElement("canvas");
     this.canvas.width = this.canvas.height = 0;
     this.canvas.className = "inkEditorCanvas";
+    this.canvas.setAttribute("data-l10n-id", "pdfjs-ink-canvas");
 
-    InkEditor._l10nPromise
-      .get("editor_ink_canvas_aria_label")
-      .then(msg => this.canvas?.setAttribute("aria-label", msg));
     this.div.append(this.canvas);
     this.ctx = this.canvas.getContext("2d");
   }
@@ -609,6 +754,11 @@ class InkEditor extends AnnotationEditor {
   }
 
   /** @inheritdoc */
+  get isResizable() {
+    return !this.isEmpty() && this.#disableEditing;
+  }
+
+  /** @inheritdoc */
   render() {
     if (this.div) {
       return this.div;
@@ -622,9 +772,7 @@ class InkEditor extends AnnotationEditor {
 
     super.render();
 
-    InkEditor._l10nPromise
-      .get("editor_ink_aria_label")
-      .then(msg => this.div?.setAttribute("aria-label", msg));
+    this.div.setAttribute("data-l10n-id", "pdfjs-ink");
 
     const [x, y, w, h] = this.#getInitialBBox();
     this.setAt(x, y, 0, 0);
@@ -634,7 +782,8 @@ class InkEditor extends AnnotationEditor {
 
     if (this.width) {
       // This editor was created in using copy (ctrl+c).
-      const [parentWidth, parentHeight] = this.parent.viewportBaseDimensions;
+      const [parentWidth, parentHeight] = this.parentDimensions;
+      this.setAspectRatio(this.width * parentWidth, this.height * parentHeight);
       this.setAt(
         baseX * parentWidth,
         baseY * parentHeight,
@@ -645,7 +794,6 @@ class InkEditor extends AnnotationEditor {
       this.#setCanvasDims();
       this.setDims(this.width * parentWidth, this.height * parentHeight);
       this.#redraw();
-      this.#setMinDims();
       this.div.classList.add("disabled");
     } else {
       this.div.classList.add("editing");
@@ -661,7 +809,7 @@ class InkEditor extends AnnotationEditor {
     if (!this.#isCanvasInitialized) {
       return;
     }
-    const [parentWidth, parentHeight] = this.parent.viewportBaseDimensions;
+    const [parentWidth, parentHeight] = this.parentDimensions;
     this.canvas.width = Math.ceil(this.width * parentWidth);
     this.canvas.height = Math.ceil(this.height * parentHeight);
     this.#updateTransform();
@@ -689,17 +837,10 @@ class InkEditor extends AnnotationEditor {
 
     this.canvas.style.visibility = "hidden";
 
-    if (
-      this.#aspectRatio &&
-      Math.abs(this.#aspectRatio - width / height) > 1e-2
-    ) {
-      height = Math.ceil(width / this.#aspectRatio);
-      this.setDims(width, height);
-    }
-
-    const [parentWidth, parentHeight] = this.parent.viewportBaseDimensions;
+    const [parentWidth, parentHeight] = this.parentDimensions;
     this.width = width / parentWidth;
     this.height = height / parentHeight;
+    this.fixAndSetPosition();
 
     if (this.#disableEditing) {
       this.#setScaleFactor(width, height);
@@ -709,6 +850,10 @@ class InkEditor extends AnnotationEditor {
     this.#redraw();
 
     this.canvas.style.visibility = "visible";
+
+    // For any reason the dimensions couldn't be in percent but in pixels, hence
+    // we must fix them.
+    this.fixDims();
   }
 
   #setScaleFactor(width, height) {
@@ -734,8 +879,8 @@ class InkEditor extends AnnotationEditor {
   }
 
   /**
-   * Convert the output of fitCurve in some Path2D.
-   * @param {Arra<Array<number>} bezier
+   * Convert into a Path2D.
+   * @param {Array<Array<number>>} bezier
    * @returns {Path2D}
    */
   static #buildPath2D(bezier) {
@@ -757,135 +902,129 @@ class InkEditor extends AnnotationEditor {
     return path2D;
   }
 
+  static #toPDFCoordinates(points, rect, rotation) {
+    const [blX, blY, trX, trY] = rect;
+
+    switch (rotation) {
+      case 0:
+        for (let i = 0, ii = points.length; i < ii; i += 2) {
+          points[i] += blX;
+          points[i + 1] = trY - points[i + 1];
+        }
+        break;
+      case 90:
+        for (let i = 0, ii = points.length; i < ii; i += 2) {
+          const x = points[i];
+          points[i] = points[i + 1] + blX;
+          points[i + 1] = x + blY;
+        }
+        break;
+      case 180:
+        for (let i = 0, ii = points.length; i < ii; i += 2) {
+          points[i] = trX - points[i];
+          points[i + 1] += blY;
+        }
+        break;
+      case 270:
+        for (let i = 0, ii = points.length; i < ii; i += 2) {
+          const x = points[i];
+          points[i] = trX - points[i + 1];
+          points[i + 1] = trY - x;
+        }
+        break;
+      default:
+        throw new Error("Invalid rotation");
+    }
+    return points;
+  }
+
+  static #fromPDFCoordinates(points, rect, rotation) {
+    const [blX, blY, trX, trY] = rect;
+
+    switch (rotation) {
+      case 0:
+        for (let i = 0, ii = points.length; i < ii; i += 2) {
+          points[i] -= blX;
+          points[i + 1] = trY - points[i + 1];
+        }
+        break;
+      case 90:
+        for (let i = 0, ii = points.length; i < ii; i += 2) {
+          const x = points[i];
+          points[i] = points[i + 1] - blY;
+          points[i + 1] = x - blX;
+        }
+        break;
+      case 180:
+        for (let i = 0, ii = points.length; i < ii; i += 2) {
+          points[i] = trX - points[i];
+          points[i + 1] -= blY;
+        }
+        break;
+      case 270:
+        for (let i = 0, ii = points.length; i < ii; i += 2) {
+          const x = points[i];
+          points[i] = trY - points[i + 1];
+          points[i + 1] = trX - x;
+        }
+        break;
+      default:
+        throw new Error("Invalid rotation");
+    }
+    return points;
+  }
+
   /**
    * Transform and serialize the paths.
    * @param {number} s - scale factor
    * @param {number} tx - abscissa of the translation
    * @param {number} ty - ordinate of the translation
-   * @param {number} h - height of the bounding box
+   * @param {Array<number>} rect - the bounding box of the annotation
    */
-  #serializePaths(s, tx, ty, h) {
-    const NUMBER_OF_POINTS_ON_BEZIER_CURVE = 4;
+  #serializePaths(s, tx, ty, rect) {
     const paths = [];
     const padding = this.thickness / 2;
-    let buffer, points;
-
+    const shiftX = s * tx + padding;
+    const shiftY = s * ty + padding;
     for (const bezier of this.paths) {
-      buffer = [];
-      points = [];
-      for (let i = 0, ii = bezier.length; i < ii; i++) {
-        const [first, control1, control2, second] = bezier[i];
-        const p10 = s * (first[0] + tx) + padding;
-        const p11 = h - s * (first[1] + ty) - padding;
-        const p20 = s * (control1[0] + tx) + padding;
-        const p21 = h - s * (control1[1] + ty) - padding;
-        const p30 = s * (control2[0] + tx) + padding;
-        const p31 = h - s * (control2[1] + ty) - padding;
-        const p40 = s * (second[0] + tx) + padding;
-        const p41 = h - s * (second[1] + ty) - padding;
+      const buffer = [];
+      const points = [];
+      for (let j = 0, jj = bezier.length; j < jj; j++) {
+        const [first, control1, control2, second] = bezier[j];
+        if (first[0] === second[0] && first[1] === second[1] && jj === 1) {
+          // We have only one point.
+          const p0 = s * first[0] + shiftX;
+          const p1 = s * first[1] + shiftY;
+          buffer.push(p0, p1);
+          points.push(p0, p1);
+          break;
+        }
+        const p10 = s * first[0] + shiftX;
+        const p11 = s * first[1] + shiftY;
+        const p20 = s * control1[0] + shiftX;
+        const p21 = s * control1[1] + shiftY;
+        const p30 = s * control2[0] + shiftX;
+        const p31 = s * control2[1] + shiftY;
+        const p40 = s * second[0] + shiftX;
+        const p41 = s * second[1] + shiftY;
 
-        if (i === 0) {
+        if (j === 0) {
           buffer.push(p10, p11);
           points.push(p10, p11);
         }
         buffer.push(p20, p21, p30, p31, p40, p41);
-        this.#extractPointsOnBezier(
-          p10,
-          p11,
-          p20,
-          p21,
-          p30,
-          p31,
-          p40,
-          p41,
-          NUMBER_OF_POINTS_ON_BEZIER_CURVE,
-          points
-        );
+        points.push(p20, p21);
+        if (j === jj - 1) {
+          points.push(p40, p41);
+        }
       }
-      paths.push({ bezier: buffer, points });
+      paths.push({
+        bezier: InkEditor.#toPDFCoordinates(buffer, rect, this.rotation),
+        points: InkEditor.#toPDFCoordinates(points, rect, this.rotation),
+      });
     }
 
     return paths;
-  }
-
-  /**
-   * Extract n-1 points from the cubic Bezier curve.
-   * @param {number} p10
-   * @param {number} p11
-   * @param {number} p20
-   * @param {number} p21
-   * @param {number} p30
-   * @param {number} p31
-   * @param {number} p40
-   * @param {number} p41
-   * @param {number} n
-   * @param {Array<number>} points
-   * @returns {undefined}
-   */
-  #extractPointsOnBezier(p10, p11, p20, p21, p30, p31, p40, p41, n, points) {
-    // If we can save few points thanks to the flatness we must do it.
-    if (this.#isAlmostFlat(p10, p11, p20, p21, p30, p31, p40, p41)) {
-      points.push(p40, p41);
-      return;
-    }
-
-    // Apply the de Casteljau's algorithm in order to get n points belonging
-    // to the Bezier's curve:
-    // https://en.wikipedia.org/wiki/De_Casteljau%27s_algorithm
-
-    // The first point is the last point of the previous Bezier curve
-    // so no need to push the first point.
-    for (let i = 1; i < n - 1; i++) {
-      const t = i / n;
-      const mt = 1 - t;
-
-      let q10 = t * p10 + mt * p20;
-      let q11 = t * p11 + mt * p21;
-
-      let q20 = t * p20 + mt * p30;
-      let q21 = t * p21 + mt * p31;
-
-      const q30 = t * p30 + mt * p40;
-      const q31 = t * p31 + mt * p41;
-
-      q10 = t * q10 + mt * q20;
-      q11 = t * q11 + mt * q21;
-
-      q20 = t * q20 + mt * q30;
-      q21 = t * q21 + mt * q31;
-
-      q10 = t * q10 + mt * q20;
-      q11 = t * q11 + mt * q21;
-
-      points.push(q10, q11);
-    }
-
-    points.push(p40, p41);
-  }
-
-  /**
-   * Check if a cubic Bezier curve is almost flat.
-   * @param {number} p10
-   * @param {number} p11
-   * @param {number} p20
-   * @param {number} p21
-   * @param {number} p30
-   * @param {number} p31
-   * @param {number} p40
-   * @param {number} p41
-   * @returns {boolean}
-   */
-  #isAlmostFlat(p10, p11, p20, p21, p30, p31, p40, p41) {
-    // For reference:
-    //   https://jeremykun.com/tag/bezier-curves/
-    const tol = 10;
-
-    const ax = (3 * p20 - 2 * p10 - p40) ** 2;
-    const ay = (3 * p21 - 2 * p11 - p41) ** 2;
-    const bx = (3 * p30 - p10 - 2 * p40) ** 2;
-    const by = (3 * p31 - p11 - 2 * p41) ** 2;
-
-    return Math.max(ax, bx) + Math.max(ay, by) <= tol;
   }
 
   /**
@@ -925,7 +1064,7 @@ class InkEditor extends AnnotationEditor {
    */
   #getPadding() {
     return this.#disableEditing
-      ? Math.ceil(this.thickness * this.parent.scaleFactor)
+      ? Math.ceil(this.thickness * this.parentScale)
       : 0;
   }
 
@@ -946,18 +1085,17 @@ class InkEditor extends AnnotationEditor {
 
     const bbox = this.#getBbox();
     const padding = this.#getPadding();
-    this.#baseWidth = Math.max(RESIZER_SIZE, bbox[2] - bbox[0]);
-    this.#baseHeight = Math.max(RESIZER_SIZE, bbox[3] - bbox[1]);
+    this.#baseWidth = Math.max(AnnotationEditor.MIN_SIZE, bbox[2] - bbox[0]);
+    this.#baseHeight = Math.max(AnnotationEditor.MIN_SIZE, bbox[3] - bbox[1]);
 
     const width = Math.ceil(padding + this.#baseWidth * this.scaleFactor);
     const height = Math.ceil(padding + this.#baseHeight * this.scaleFactor);
 
-    const [parentWidth, parentHeight] = this.parent.viewportBaseDimensions;
+    const [parentWidth, parentHeight] = this.parentDimensions;
     this.width = width / parentWidth;
     this.height = height / parentHeight;
 
-    this.#aspectRatio = width / height;
-    this.#setMinDims();
+    this.setAspectRatio(width, height);
 
     const prevTranslationX = this.translationX;
     const prevTranslationY = this.translationY;
@@ -978,48 +1116,42 @@ class InkEditor extends AnnotationEditor {
     );
   }
 
-  #setMinDims() {
-    const { style } = this.div;
-    if (this.#aspectRatio >= 1) {
-      style.minHeight = `${RESIZER_SIZE}px`;
-      style.minWidth = `${Math.round(this.#aspectRatio * RESIZER_SIZE)}px`;
-    } else {
-      style.minWidth = `${RESIZER_SIZE}px`;
-      style.minHeight = `${Math.round(RESIZER_SIZE / this.#aspectRatio)}px`;
-    }
-  }
-
   /** @inheritdoc */
-  static deserialize(data, parent) {
-    const editor = super.deserialize(data, parent);
+  static deserialize(data, parent, uiManager) {
+    if (data instanceof InkAnnotationElement) {
+      return null;
+    }
+    const editor = super.deserialize(data, parent, uiManager);
 
     editor.thickness = data.thickness;
     editor.color = Util.makeHexColor(...data.color);
     editor.opacity = data.opacity;
 
-    const [pageWidth, pageHeight] = parent.pageDimensions;
+    const [pageWidth, pageHeight] = editor.pageDimensions;
     const width = editor.width * pageWidth;
     const height = editor.height * pageHeight;
-    const scaleFactor = parent.scaleFactor;
+    const scaleFactor = editor.parentScale;
     const padding = data.thickness / 2;
 
-    editor.#aspectRatio = width / height;
     editor.#disableEditing = true;
     editor.#realWidth = Math.round(width);
     editor.#realHeight = Math.round(height);
 
-    for (const { bezier } of data.paths) {
+    const { paths, rect, rotation } = data;
+
+    for (let { bezier } of paths) {
+      bezier = InkEditor.#fromPDFCoordinates(bezier, rect, rotation);
       const path = [];
       editor.paths.push(path);
       let p0 = scaleFactor * (bezier[0] - padding);
-      let p1 = scaleFactor * (height - bezier[1] - padding);
+      let p1 = scaleFactor * (bezier[1] - padding);
       for (let i = 2, ii = bezier.length; i < ii; i += 6) {
         const p10 = scaleFactor * (bezier[i] - padding);
-        const p11 = scaleFactor * (height - bezier[i + 1] - padding);
+        const p11 = scaleFactor * (bezier[i + 1] - padding);
         const p20 = scaleFactor * (bezier[i + 2] - padding);
-        const p21 = scaleFactor * (height - bezier[i + 3] - padding);
+        const p21 = scaleFactor * (bezier[i + 3] - padding);
         const p30 = scaleFactor * (bezier[i + 4] - padding);
-        const p31 = scaleFactor * (height - bezier[i + 5] - padding);
+        const p31 = scaleFactor * (bezier[i + 5] - padding);
         path.push([
           [p0, p1],
           [p10, p11],
@@ -1034,8 +1166,8 @@ class InkEditor extends AnnotationEditor {
     }
 
     const bbox = editor.#getBbox();
-    editor.#baseWidth = Math.max(RESIZER_SIZE, bbox[2] - bbox[0]);
-    editor.#baseHeight = Math.max(RESIZER_SIZE, bbox[3] - bbox[1]);
+    editor.#baseWidth = Math.max(AnnotationEditor.MIN_SIZE, bbox[2] - bbox[0]);
+    editor.#baseHeight = Math.max(AnnotationEditor.MIN_SIZE, bbox[3] - bbox[1]);
     editor.#setScaleFactor(width, height);
 
     return editor;
@@ -1048,9 +1180,6 @@ class InkEditor extends AnnotationEditor {
     }
 
     const rect = this.getRect(0, 0);
-    const height =
-      this.rotation % 180 === 0 ? rect[3] - rect[1] : rect[2] - rect[0];
-
     const color = AnnotationEditor._colorManager.convert(this.ctx.strokeStyle);
 
     return {
@@ -1059,16 +1188,17 @@ class InkEditor extends AnnotationEditor {
       thickness: this.thickness,
       opacity: this.opacity,
       paths: this.#serializePaths(
-        this.scaleFactor / this.parent.scaleFactor,
+        this.scaleFactor / this.parentScale,
         this.translationX,
         this.translationY,
-        height
+        rect
       ),
-      pageIndex: this.parent.pageIndex,
+      pageIndex: this.pageIndex,
       rect,
       rotation: this.rotation,
+      structTreeParentId: this._structTreeParentId,
     };
   }
 }
 
-export { fitCurve, InkEditor };
+export { InkEditor };

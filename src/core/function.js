@@ -23,6 +23,7 @@ import {
 } from "../shared/util.js";
 import { PostScriptLexer, PostScriptParser } from "./ps_parser.js";
 import { BaseStream } from "./base_stream.js";
+import { isNumberArray } from "./core_utils.js";
 import { LocalFunctionCache } from "./image_utils.js";
 
 class PDFFunctionFactory {
@@ -72,7 +73,7 @@ class PDFFunctionFactory {
     } else if (cacheKey instanceof Dict) {
       fnRef = cacheKey.objId;
     } else if (cacheKey instanceof BaseStream) {
-      fnRef = cacheKey.dict && cacheKey.dict.objId;
+      fnRef = cacheKey.dict?.objId;
     }
     if (fnRef) {
       const localFunction = this._localFunctionCache.getByRef(fnRef);
@@ -98,7 +99,7 @@ class PDFFunctionFactory {
     } else if (cacheKey instanceof Dict) {
       fnRef = cacheKey.objId;
     } else if (cacheKey instanceof BaseStream) {
-      fnRef = cacheKey.dict && cacheKey.dict.objId;
+      fnRef = cacheKey.dict?.objId;
     }
     if (fnRef) {
       this._localFunctionCache.set(/* name = */ null, fnRef, parsedFunction);
@@ -117,16 +118,9 @@ function toNumberArray(arr) {
   if (!Array.isArray(arr)) {
     return null;
   }
-  const length = arr.length;
-  for (let i = 0; i < length; i++) {
-    if (typeof arr[i] !== "number") {
-      // Non-number is found -- convert all items to numbers.
-      const result = new Array(length);
-      for (let j = 0; j < length; j++) {
-        result[j] = +arr[j];
-      }
-      return result;
-    }
+  if (!isNumberArray(arr, null)) {
+    // Non-number is found -- convert all items to numbers.
+    return arr.map(x => +x);
   }
   return arr;
 }
@@ -187,9 +181,9 @@ class PDFFunction {
     }
 
     const fnArray = [];
-    for (let j = 0, jj = fnObj.length; j < jj; j++) {
+    for (const fn of fnObj) {
       fnArray.push(
-        this.parse({ xref, isEvalSupported, fn: xref.fetchIfRef(fnObj[j]) })
+        this.parse({ xref, isEvalSupported, fn: xref.fetchIfRef(fn) })
       );
     }
     return function (src, srcOffset, dest, destOffset) {
@@ -247,11 +241,7 @@ class PDFFunction {
     }
 
     let decode = toNumberArray(dict.getArray("Decode"));
-    if (!decode) {
-      decode = range;
-    } else {
-      decode = toMultiArray(decode);
-    }
+    decode = !decode ? range : toMultiArray(decode);
 
     const samples = this.getSampleArray(size, outputSize, bps, fn);
     // const mask = 2 ** bps - 1;
@@ -364,12 +354,9 @@ class PDFFunction {
       throw new FormatError("Bad domain for stiched function");
     }
 
-    const fnRefs = dict.get("Functions");
     const fns = [];
-    for (let i = 0, ii = fnRefs.length; i < ii; ++i) {
-      fns.push(
-        this.parse({ xref, isEvalSupported, fn: xref.fetchIfRef(fnRefs[i]) })
-      );
+    for (const fn of dict.get("Functions")) {
+      fns.push(this.parse({ xref, isEvalSupported, fn: xref.fetchIfRef(fn) }));
     }
 
     const bounds = toNumberArray(dict.getArray("Bounds"));
@@ -505,9 +492,7 @@ class PDFFunction {
 
 function isPDFFunction(v) {
   let fnDict;
-  if (typeof v !== "object") {
-    return false;
-  } else if (v instanceof Dict) {
+  if (v instanceof Dict) {
     fnDict = v;
   } else if (v instanceof BaseStream) {
     fnDict = v.dict;
@@ -518,14 +503,10 @@ function isPDFFunction(v) {
 }
 
 class PostScriptStack {
-  static get MAX_STACK_SIZE() {
-    return shadow(this, "MAX_STACK_SIZE", 100);
-  }
+  static MAX_STACK_SIZE = 100;
 
   constructor(initialStack) {
-    this.stack = !initialStack
-      ? []
-      : Array.prototype.slice.call(initialStack, 0);
+    this.stack = initialStack ? Array.from(initialStack) : [];
   }
 
   push(value) {
@@ -633,8 +614,13 @@ class PostScriptEvaluator {
           }
           break;
         case "atan":
+          b = stack.pop();
           a = stack.pop();
-          stack.push(Math.atan(a));
+          a = (Math.atan2(a, b) / Math.PI) * 180;
+          if (a < 0) {
+            a += 360;
+          }
+          stack.push(a);
           break;
         case "bitshift":
           b = stack.pop();
@@ -655,7 +641,7 @@ class PostScriptEvaluator {
           break;
         case "cos":
           a = stack.pop();
-          stack.push(Math.cos(a));
+          stack.push(Math.cos(((a % 360) / 180) * Math.PI));
           break;
         case "cvi":
           a = stack.pop() | 0;
@@ -722,7 +708,7 @@ class PostScriptEvaluator {
           break;
         case "log":
           a = stack.pop();
-          stack.push(Math.log(a) / Math.LN10);
+          stack.push(Math.log10(a));
           break;
         case "lt":
           b = stack.pop();
@@ -779,7 +765,7 @@ class PostScriptEvaluator {
           break;
         case "sin":
           a = stack.pop();
-          stack.push(Math.sin(a));
+          stack.push(Math.sin(((a % 360) / 180) * Math.PI));
           break;
         case "sqrt":
           a = stack.pop();
@@ -1201,10 +1187,7 @@ class PostScriptCompiler {
           if (j === 0) {
             break; // just skipping -- there are nothing to rotate
           }
-          Array.prototype.push.apply(
-            stack,
-            stack.splice(stack.length - n, n - j)
-          );
+          stack.push(...stack.splice(stack.length - n, n - j));
           break;
         default:
           return null; // unsupported operator

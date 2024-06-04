@@ -20,7 +20,6 @@ import {
   shadow,
 } from "pdfjs-lib";
 import { getXfaHtmlForPrinting } from "./print_utils.js";
-import { PDFPrintServiceFactory } from "./app.js";
 
 // Creates a placeholder with div and canvas with right size for the page.
 function composePage(
@@ -114,25 +113,25 @@ function composePage(
   };
 }
 
-function FirefoxPrintService(
-  pdfDocument,
-  pagesOverview,
-  printContainer,
-  printResolution,
-  optionalContentConfigPromise = null,
-  printAnnotationStoragePromise = null
-) {
-  this.pdfDocument = pdfDocument;
-  this.pagesOverview = pagesOverview;
-  this.printContainer = printContainer;
-  this._printResolution = printResolution || 150;
-  this._optionalContentConfigPromise =
-    optionalContentConfigPromise || pdfDocument.getOptionalContentConfig();
-  this._printAnnotationStoragePromise =
-    printAnnotationStoragePromise || Promise.resolve();
-}
+class FirefoxPrintService {
+  constructor({
+    pdfDocument,
+    pagesOverview,
+    printContainer,
+    printResolution,
+    printAnnotationStoragePromise = null,
+  }) {
+    this.pdfDocument = pdfDocument;
+    this.pagesOverview = pagesOverview;
+    this.printContainer = printContainer;
+    this._printResolution = printResolution || 150;
+    this._optionalContentConfigPromise = pdfDocument.getOptionalContentConfig({
+      intent: "print",
+    });
+    this._printAnnotationStoragePromise =
+      printAnnotationStoragePromise || Promise.resolve();
+  }
 
-FirefoxPrintService.prototype = {
   layout() {
     const {
       pdfDocument,
@@ -145,6 +144,23 @@ FirefoxPrintService.prototype = {
 
     const body = document.querySelector("body");
     body.setAttribute("data-pdfjsprinting", true);
+
+    const { width, height } = this.pagesOverview[0];
+    const hasEqualPageSizes = this.pagesOverview.every(
+      size => size.width === width && size.height === height
+    );
+    if (!hasEqualPageSizes) {
+      console.warn(
+        "Not all pages have the same size. The printed result may be incorrect!"
+      );
+    }
+
+    // Insert a @page + size rule to make sure that the page size is correctly
+    // set. Note that we assume that all pages have the same size, because
+    // variable-size pages are scaled down to the initial page size in Firefox.
+    this.pageStyleSheet = document.createElement("style");
+    this.pageStyleSheet.textContent = `@page { size: ${width}pt ${height}pt;}`;
+    body.append(this.pageStyleSheet);
 
     if (pdfDocument.isPureXfa) {
       getXfaHtmlForPrinting(printContainer, pdfDocument);
@@ -162,41 +178,33 @@ FirefoxPrintService.prototype = {
         _printAnnotationStoragePromise
       );
     }
-  },
+  }
 
   destroy() {
     this.printContainer.textContent = "";
 
     const body = document.querySelector("body");
     body.removeAttribute("data-pdfjsprinting");
-  },
-};
 
-PDFPrintServiceFactory.instance = {
-  get supportsPrinting() {
+    if (this.pageStyleSheet) {
+      this.pageStyleSheet.remove();
+      this.pageStyleSheet = null;
+    }
+  }
+}
+
+/**
+ * @implements {IPDFPrintServiceFactory}
+ */
+class PDFPrintServiceFactory {
+  static get supportsPrinting() {
     const canvas = document.createElement("canvas");
-    const value = "mozPrintCallback" in canvas;
+    return shadow(this, "supportsPrinting", "mozPrintCallback" in canvas);
+  }
 
-    return shadow(this, "supportsPrinting", value);
-  },
+  static createPrintService(params) {
+    return new FirefoxPrintService(params);
+  }
+}
 
-  createPrintService(
-    pdfDocument,
-    pagesOverview,
-    printContainer,
-    printResolution,
-    optionalContentConfigPromise,
-    printAnnotationStoragePromise
-  ) {
-    return new FirefoxPrintService(
-      pdfDocument,
-      pagesOverview,
-      printContainer,
-      printResolution,
-      optionalContentConfigPromise,
-      printAnnotationStoragePromise
-    );
-  },
-};
-
-export { FirefoxPrintService };
+export { PDFPrintServiceFactory };
