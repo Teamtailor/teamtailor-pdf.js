@@ -74,6 +74,14 @@ class IPDFLinkService {
   goToPage(val) {}
 
   /**
+   * Scrolls to a specific location in the PDF document.
+   * @param {number} pageNumber - The page number to scroll to.
+   * @param {number} x - The x-coordinate to scroll to in page coordinates.
+   * @param {number} y - The y-coordinate to scroll to in page coordinates.
+   */
+  goToXY(pageNumber, x, y) {}
+
+  /**
    * @param {HTMLAnchorElement} link
    * @param {string} url
    * @param {boolean} [newWindow]
@@ -138,13 +146,6 @@ class IRenderableView {
  */
 class IDownloadManager {
   /**
-   * @param {string} url
-   * @param {string} filename
-   * @param {Object} [options]
-   */
-  downloadUrl(url, filename, options) {}
-
-  /**
    * @param {Uint8Array} data
    * @param {string} filename
    * @param {string} [contentType]
@@ -160,12 +161,11 @@ class IDownloadManager {
   openOrDownloadData(data, filename, dest = null) {}
 
   /**
-   * @param {Blob} blob
+   * @param {Uint8Array} data
    * @param {string} url
    * @param {string} filename
-   * @param {Object} [options]
    */
-  download(blob, url, filename, options) {}
+  download(data, url, filename) {}
 }
 
 /**
