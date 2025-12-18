@@ -15,7 +15,7 @@
 
 import {
   closePages,
-  kbCopy,
+  copy,
   kbSelectAll,
   loadAndWait,
   mockClipboard,
@@ -23,9 +23,11 @@ import {
 } from "./test_utils.mjs";
 
 const selectAll = async page => {
-  const promise = waitForEvent(page, "selectionchange");
-  await kbSelectAll(page);
-  await promise;
+  await waitForEvent({
+    page,
+    eventName: "selectionchange",
+    action: () => kbSelectAll(page),
+  });
 
   await page.waitForFunction(() => {
     const selection = document.getSelection();
@@ -38,12 +40,12 @@ describe("Copy and paste", () => {
   describe("all text", () => {
     let pages;
 
-    beforeAll(async () => {
+    beforeEach(async () => {
       pages = await loadAndWait("tracemonkey.pdf", "#hiddenCopyElement", 100);
       await mockClipboard(pages);
     });
 
-    afterAll(async () => {
+    afterEach(async () => {
       await closePages(pages);
     });
 
@@ -55,10 +57,7 @@ describe("Copy and paste", () => {
           );
           await selectAll(page);
 
-          const promise = waitForEvent(page, "copy");
-          await kbCopy(page);
-          await promise;
-
+          await copy(page);
           await page.waitForFunction(
             `document.querySelector('#viewerContainer').style.cursor !== "wait"`
           );
@@ -138,7 +137,7 @@ describe("Copy and paste", () => {
   describe("Copy/paste and ligatures", () => {
     let pages;
 
-    beforeAll(async () => {
+    beforeEach(async () => {
       pages = await loadAndWait(
         "copy_paste_ligatures.pdf",
         "#hiddenCopyElement",
@@ -147,7 +146,7 @@ describe("Copy and paste", () => {
       await mockClipboard(pages);
     });
 
-    afterAll(async () => {
+    afterEach(async () => {
       await closePages(pages);
     });
 
@@ -159,10 +158,7 @@ describe("Copy and paste", () => {
           );
           await selectAll(page);
 
-          const promise = waitForEvent(page, "copy");
-          await kbCopy(page);
-          await promise;
-
+          await copy(page);
           await page.waitForFunction(
             `document.querySelector('#viewerContainer').style.cursor !== "wait"`
           );
