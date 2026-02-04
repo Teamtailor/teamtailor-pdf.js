@@ -1,7 +1,7 @@
 # Teamtailor notes
 
 This is a mirrored version of the original repository. In order to get the implementation to work with s3 we've changed the source code and whitelisted a couple of our domains.
-After doing changes in this repo, run `npm install` then `npx gulp minified` command and to deploy the changes you can use the aws cli like this `aws s3 sync build/minified s3://scripts.teamtailor-cdn.com/pdf.js/v8 --acl public-read --profile Teamtailor`, just remember to increment the version number to bust the cache.
+After doing changes in this repo, run `npm install` then `npx gulp generic && aws s3 sync --acl public-read --profile Teamtailor build/generic s3://scripts.teamtailor-cdn.com/pdf.js/v8.1` to build and upload to S3, just remember to increment the version number to bust the cache.
 
 You [might need to install some extra dependencies](https://github.com/mozilla/pdf.js/issues/14402#issuecomment-1001373658) to get `npm install` to work. Here are some commands that might help you:
 
