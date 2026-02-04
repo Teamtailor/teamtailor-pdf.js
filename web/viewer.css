@@ -299,7 +299,7 @@ body {
 #viewerContainer {
   overflow: auto;
   position: absolute;
-  inset: 0 0 0;
+  inset: 32px 0 0 0;
   outline: none;
 }
 #viewerContainer:not(.pdfPresentationMode) {
