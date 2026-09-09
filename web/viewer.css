@@ -15,6 +15,21 @@
 
 @import url(pdf_viewer.css);
 
+@font-face {
+  font-display: swap;
+  font-family: "InterVariable";
+  font-style: normal;
+  font-weight: 100 900;
+  src: url(fonts/InterVariable.woff2?v=4.1) format("woff2");
+}
+
+@font-face {
+  ascent-override: 92%;
+  font-family: "Inter-fallback";
+  size-adjust: 109%;
+  src: local("Arial");
+}
+
 :root {
   --dir-factor: 1;
   /*#if !MOZCENTRAL*/
@@ -46,6 +61,10 @@
   --toolbar-border-color: rgb(184 184 184);
   --toolbar-box-shadow: 0 1px 0 var(--toolbar-border-color);
   --toolbar-border-bottom: none;
+  --toolbar-height: 36px;
+  --toolbar-font-family: "InterVariable", "Inter-fallback", sans-serif;
+  --toolbar-font-size: 14px;
+  --toolbar-line-height: 20px;
   --toolbarSidebar-box-shadow: inset calc(-1px * var(--dir-factor)) 0 0
       rgb(0 0 0 / 0.25),
     0 1px 0 rgb(0 0 0 / 0.15), 0 0 1px rgb(0 0 0 / 0.1);
@@ -261,12 +280,13 @@ body {
 
 #sidebarContainer {
   position: absolute;
-  inset-block: 32px 0;
+  inset-block: var(--toolbar-height) 0;
   inset-inline-start: calc(-1 * var(--sidebar-width));
   width: var(--sidebar-width);
   visibility: hidden;
   z-index: 100;
   font: message-box;
+  font-family: var(--toolbar-font-family);
   border-top: 1px solid rgb(51 51 51);
   border-inline-end: var(--doorhanger-border-color-whcm);
   transition-property: inset-inline-start;
@@ -299,7 +319,7 @@ body {
 #viewerContainer {
   overflow: auto;
   position: absolute;
-  inset: 32px 0 0 0;
+  inset: var(--toolbar-height) 0 0 0;
   outline: none;
 }
 #viewerContainer:not(.pdfPresentationMode) {
@@ -318,6 +338,7 @@ body {
   z-index: 9999;
   cursor: default;
   font: message-box;
+  font-family: var(--toolbar-font-family);
 }
 
 :is(.toolbar, .editorParamsToolbar, .findbar, #sidebarContainer)
@@ -325,6 +346,8 @@ body {
 .secondaryToolbar :is(input, button, a, select) {
   outline: none;
   font: message-box;
+  font-family: var(--toolbar-font-family);
+  font-size: var(--toolbar-font-size);
 }
 
 #toolbarContainer {
@@ -359,8 +382,16 @@ body {
   border-bottom: var(--toolbar-border-bottom);
 }
 
+#toolbarContainer {
+  height: var(--toolbar-height);
+  box-shadow: none;
+  border-bottom: none;
+}
+
 #toolbarViewer {
-  height: 32px;
+  height: var(--toolbar-height);
+  padding-block: calc((var(--toolbar-height) - 32px) / 2);
+  box-sizing: border-box;
 }
 
 #loadingBar {
@@ -438,15 +469,16 @@ body {
 .findbar,
 .secondaryToolbar,
 .editorParamsToolbar {
-  top: 32px;
+  top: var(--toolbar-height);
   position: absolute;
   z-index: 30000;
   height: auto;
   padding: 0 4px;
   margin: 4px 2px;
   font: message-box;
-  font-size: 12px;
-  line-height: 14px;
+  font-family: var(--toolbar-font-family);
+  font-size: var(--toolbar-font-size);
+  line-height: var(--toolbar-line-height);
   text-align: left;
   cursor: default;
 }
@@ -759,8 +791,8 @@ body {
   border: none;
   border-radius: 2px;
   color: var(--main-color);
-  font-size: 12px;
-  line-height: 14px;
+  font-size: var(--toolbar-font-size);
+  line-height: var(--toolbar-line-height);
   user-select: none;
   cursor: default;
   box-sizing: border-box;
@@ -814,7 +846,7 @@ body {
   width: inherit;
   min-width: inherit;
   height: 28px;
-  font-size: 12px;
+  font-size: var(--toolbar-font-size);
   color: var(--main-color);
   margin: 0;
   padding-block: 1px 2px;
@@ -1091,8 +1123,8 @@ a:is(.toolbarButton, .secondaryToolbarButton)[href="#"] {
   border: 1px solid var(--field-border-color);
   box-shadow: none;
   color: var(--field-color);
-  font-size: 12px;
-  line-height: 16px;
+  font-size: var(--toolbar-font-size);
+  line-height: var(--toolbar-line-height);
   outline: none;
 }
 
@@ -1159,8 +1191,8 @@ a:is(.toolbarButton, .secondaryToolbarButton)[href="#"] {
   margin: 2px;
   border-radius: 2px;
   color: var(--main-color);
-  font-size: 12px;
-  line-height: 14px;
+  font-size: var(--toolbar-font-size);
+  line-height: var(--toolbar-line-height);
   text-align: left;
   user-select: none;
   cursor: default;
