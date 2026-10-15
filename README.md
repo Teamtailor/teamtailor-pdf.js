@@ -1,7 +1,19 @@
 # Teamtailor notes
 
 This is a mirrored version of the original repository. In order to get the implementation to work with s3 we've changed the source code and whitelisted a couple of our domains.
-After doing changes in this repo, run `npm install` then `npx gulp generic && aws s3 sync --acl public-read --profile Teamtailor build/generic s3://scripts.teamtailor-cdn.com/pdf.js/v8.1` to build and upload to S3, just remember to increment the version number to bust the cache.
+After doing changes in this repo, run `npm install` then `npx gulp generic && aws s3 sync --acl public-read --profile Teamtailor build/generic s3://scripts.teamtailor-cdn.com/pdf.js/v8.3` to build and upload to S3, just remember to increment the version number to bust the cache.
+
+The generic viewer accepts these optional query parameters (all default to enabled):
+
+- `isDownloadEnabled=false`: hide Save in the main and secondary toolbars.
+- `isOpenEnabled=false`: hide Open in the secondary toolbar.
+- `isPrintEnabled=false`: hide Print in the main and secondary toolbars.
+
+For example: `web/viewer.html?file=<encoded-url>&isDownloadEnabled=false&isOpenEnabled=false&isPrintEnabled=false`.
+These options control menu visibility; they do not prevent access to the PDF or disable keyboard shortcuts.
+Publish v8.3 before deploying application code that references it.
+
+Viewer chrome uses semantic color values copied from `@teamtailor/design-tokens` 0.7.3 (`src/output/theme-light.css` and `theme-dark.css`). Keep the `--color-*` declarations in `web/viewer.css` in sync when updating the app palette. PDF page contents and system forced-color overrides retain their original colors.
 
 You [might need to install some extra dependencies](https://github.com/mozilla/pdf.js/issues/14402#issuecomment-1001373658) to get `npm install` to work. Here are some commands that might help you:
 

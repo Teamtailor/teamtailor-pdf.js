@@ -31,6 +31,22 @@
 }
 
 :root {
+  --color-background-action-soft: rgb(118 99 60 / 0.097);
+  --color-background-action-soft-active: rgb(118 99 60 / 0.262);
+  --color-background-action-soft-hover: rgb(118 99 60 / 0.159);
+  --color-background-action-soft-solid: oklch(95.9% 0.0074 80.7);
+  --color-background-action-strong: oklch(65.6% 0.2207 358.2);
+  --color-background-neutral-default: #fff;
+  --color-background-neutral-hover: oklch(98% 0.0045 78.3);
+  --color-background-neutral-medium: oklch(94.4% 0.0089 81.25);
+  --color-background-neutral-track: oklch(92.9% 0.0103 81.8);
+  --color-background-neutral-weak: oklch(98% 0.0045 78.3);
+  --color-border-neutral-default: oklch(94.4% 0.0089 81.25);
+  --color-border-neutral-medium: oklch(92.9% 0.0103 81.8);
+  --color-border-neutral-strong: oklch(87.5% 0.0139 78.3);
+  --color-outline-focus-neutral: oklch(from oklch(58% 0.0249 42.4) l c h / 0.5);
+  --color-text-neutral-default: oklch(34.8% 0.029 18.6);
+
   --dir-factor: 1;
   /*#if !MOZCENTRAL*/
   --inline-start: left;
@@ -45,20 +61,20 @@
   --doorhanger-icon-opacity: 0.9;
   --editor-toolbar-base-offset: 105px;
 
-  --main-color: rgb(12 12 13);
-  --body-bg-color: rgb(212 212 215);
-  --progressBar-color: rgb(10 132 255);
-  --progressBar-bg-color: rgb(221 221 222);
-  --progressBar-blend-color: rgb(116 177 239);
+  --main-color: var(--color-text-neutral-default);
+  --body-bg-color: var(--color-background-neutral-weak);
+  --progressBar-color: var(--color-background-action-strong);
+  --progressBar-bg-color: var(--color-background-neutral-track);
+  --progressBar-blend-color: var(--color-background-action-soft-solid);
   --scrollbar-color: auto;
   --scrollbar-bg-color: auto;
-  --toolbar-icon-bg-color: rgb(0 0 0);
-  --toolbar-icon-hover-bg-color: rgb(0 0 0);
+  --toolbar-icon-bg-color: var(--color-text-neutral-default);
+  --toolbar-icon-hover-bg-color: var(--color-text-neutral-default);
 
-  --sidebar-narrow-bg-color: rgb(212 212 215 / 0.9);
-  --sidebar-toolbar-bg-color: rgb(245 246 247);
-  --toolbar-bg-color: rgb(249 249 250);
-  --toolbar-border-color: rgb(184 184 184);
+  --sidebar-narrow-bg-color: var(--color-background-neutral-default);
+  --sidebar-toolbar-bg-color: var(--color-background-neutral-default);
+  --toolbar-bg-color: var(--color-background-neutral-default);
+  --toolbar-border-color: var(--color-border-neutral-default);
   --toolbar-box-shadow: 0 1px 0 var(--toolbar-border-color);
   --toolbar-border-bottom: none;
   --toolbar-height: 36px;
@@ -69,32 +85,32 @@
       rgb(0 0 0 / 0.25),
     0 1px 0 rgb(0 0 0 / 0.15), 0 0 1px rgb(0 0 0 / 0.1);
   --toolbarSidebar-border-bottom: none;
-  --button-hover-color: rgb(221 222 223);
-  --toggled-btn-color: rgb(0 0 0);
-  --toggled-btn-bg-color: rgb(0 0 0 / 0.3);
-  --toggled-hover-active-btn-color: rgb(0 0 0 / 0.4);
+  --button-hover-color: var(--color-background-neutral-hover);
+  --toggled-btn-color: var(--color-text-neutral-default);
+  --toggled-btn-bg-color: var(--color-background-action-soft-active);
+  --toggled-hover-active-btn-color: var(--color-background-action-soft-hover);
   --toggled-hover-btn-outline: none;
-  --dropdown-btn-bg-color: rgb(215 215 219);
+  --dropdown-btn-bg-color: var(--color-background-neutral-medium);
   --dropdown-btn-border: none;
-  --separator-color: rgb(0 0 0 / 0.3);
-  --field-color: rgb(6 6 6);
-  --field-bg-color: rgb(255 255 255);
-  --field-border-color: rgb(187 187 188);
-  --treeitem-color: rgb(0 0 0 / 0.8);
-  --treeitem-bg-color: rgb(0 0 0 / 0.15);
-  --treeitem-hover-color: rgb(0 0 0 / 0.9);
-  --treeitem-selected-color: rgb(0 0 0 / 0.9);
-  --treeitem-selected-bg-color: rgb(0 0 0 / 0.25);
-  --thumbnail-hover-color: rgb(0 0 0 / 0.1);
-  --thumbnail-selected-color: rgb(0 0 0 / 0.2);
-  --doorhanger-bg-color: rgb(255 255 255);
-  --doorhanger-border-color: rgb(12 12 13 / 0.2);
-  --doorhanger-hover-color: rgb(12 12 13);
-  --doorhanger-hover-bg-color: rgb(237 237 237);
-  --doorhanger-separator-color: rgb(222 222 222);
+  --separator-color: var(--color-border-neutral-default);
+  --field-color: var(--color-text-neutral-default);
+  --field-bg-color: var(--color-background-neutral-default);
+  --field-border-color: var(--color-border-neutral-strong);
+  --treeitem-color: var(--color-text-neutral-default);
+  --treeitem-bg-color: var(--color-background-action-soft-active);
+  --treeitem-hover-color: var(--color-text-neutral-default);
+  --treeitem-selected-color: var(--color-text-neutral-default);
+  --treeitem-selected-bg-color: var(--color-background-action-soft-active);
+  --thumbnail-hover-color: var(--color-background-action-soft-hover);
+  --thumbnail-selected-color: var(--color-background-action-soft-active);
+  --doorhanger-bg-color: var(--color-background-neutral-default);
+  --doorhanger-border-color: var(--color-border-neutral-medium);
+  --doorhanger-hover-color: var(--color-text-neutral-default);
+  --doorhanger-hover-bg-color: var(--color-background-neutral-hover);
+  --doorhanger-separator-color: var(--color-border-neutral-default);
   --dialog-button-border: none;
-  --dialog-button-bg-color: rgb(12 12 13 / 0.1);
-  --dialog-button-hover-bg-color: rgb(12 12 13 / 0.3);
+  --dialog-button-bg-color: var(--color-background-action-soft);
+  --dialog-button-hover-bg-color: var(--color-background-action-soft-hover);
 
   --loading-icon: url(images/loading.svg);
   --treeitem-expanded-icon: url(images/treeitem-expanded.svg);
@@ -152,43 +168,61 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --main-color: rgb(249 249 250);
-    --body-bg-color: rgb(42 42 46);
-    --progressBar-color: rgb(0 96 223);
-    --progressBar-bg-color: rgb(40 40 43);
-    --progressBar-blend-color: rgb(20 68 133);
+    --color-background-action-soft: rgb(255 200 200 / 0.145);
+    --color-background-action-soft-active: rgb(255 200 200 / 0.25);
+    --color-background-action-soft-hover: rgb(255 200 200 / 0.197);
+    --color-background-action-soft-solid: oklch(29.7% 0.0257 18.7);
+    --color-background-action-strong: oklch(65.6% 0.2207 358.2);
+    --color-background-neutral-default: oklch(24.2% 0.0208 23.7);
+    --color-background-neutral-hover: oklch(from #fff l c h / 0.03);
+    --color-background-neutral-medium: oklch(34.8% 0.029 18.6);
+    --color-background-neutral-track: oklch(46.6% 0.0268 30);
+    --color-background-neutral-weak: oklch(24.2% 0.0208 23.7);
+    --color-border-neutral-default: oklch(29.7% 0.0257 18.7);
+    --color-border-neutral-medium: oklch(34.8% 0.029 18.6);
+    --color-border-neutral-strong: oklch(46.6% 0.0268 30);
+    --color-outline-focus-neutral: oklch(
+      from oklch(58% 0.0249 42.4) l c h / 0.5
+    );
+    --color-text-neutral-default: oklch(from #fff l c h / 0.93);
+
+    --main-color: var(--color-text-neutral-default);
+    --body-bg-color: var(--color-background-neutral-weak);
+    --progressBar-color: var(--color-background-action-strong);
+    --progressBar-bg-color: var(--color-background-neutral-track);
+    --progressBar-blend-color: var(--color-background-action-soft-solid);
     --scrollbar-color: rgb(121 121 123);
     --scrollbar-bg-color: rgb(35 35 39);
-    --toolbar-icon-bg-color: rgb(255 255 255);
-    --toolbar-icon-hover-bg-color: rgb(255 255 255);
+    --toolbar-icon-bg-color: var(--color-text-neutral-default);
+    --toolbar-icon-hover-bg-color: var(--color-text-neutral-default);
 
-    --sidebar-narrow-bg-color: rgb(42 42 46 / 0.9);
-    --sidebar-toolbar-bg-color: rgb(50 50 52);
-    --toolbar-bg-color: rgb(56 56 61);
-    --toolbar-border-color: rgb(12 12 13);
-    --button-hover-color: rgb(102 102 103);
-    --toggled-btn-color: rgb(255 255 255);
-    --toggled-btn-bg-color: rgb(0 0 0 / 0.3);
-    --toggled-hover-active-btn-color: rgb(0 0 0 / 0.4);
-    --dropdown-btn-bg-color: rgb(74 74 79);
-    --separator-color: rgb(0 0 0 / 0.3);
-    --field-color: rgb(250 250 250);
-    --field-bg-color: rgb(64 64 68);
-    --field-border-color: rgb(115 115 115);
-    --treeitem-color: rgb(255 255 255 / 0.8);
-    --treeitem-bg-color: rgb(255 255 255 / 0.15);
-    --treeitem-hover-color: rgb(255 255 255 / 0.9);
-    --treeitem-selected-color: rgb(255 255 255 / 0.9);
-    --treeitem-selected-bg-color: rgb(255 255 255 / 0.25);
-    --thumbnail-hover-color: rgb(255 255 255 / 0.1);
-    --thumbnail-selected-color: rgb(255 255 255 / 0.2);
-    --doorhanger-bg-color: rgb(74 74 79);
-    --doorhanger-border-color: rgb(39 39 43);
-    --doorhanger-hover-color: rgb(249 249 250);
-    --doorhanger-hover-bg-color: rgb(93 94 98);
-    --doorhanger-separator-color: rgb(92 92 97);
-    --dialog-button-bg-color: rgb(92 92 97);
-    --dialog-button-hover-bg-color: rgb(115 115 115);
+    --sidebar-narrow-bg-color: var(--color-background-neutral-default);
+    --sidebar-toolbar-bg-color: var(--color-background-neutral-default);
+    --toolbar-bg-color: var(--color-background-neutral-default);
+    --toolbar-border-color: var(--color-border-neutral-default);
+    --button-hover-color: var(--color-background-neutral-hover);
+    --toggled-btn-color: var(--color-text-neutral-default);
+    --toggled-btn-bg-color: var(--color-background-action-soft-active);
+    --toggled-hover-active-btn-color: var(--color-background-action-soft-hover);
+    --dropdown-btn-bg-color: var(--color-background-neutral-medium);
+    --separator-color: var(--color-border-neutral-default);
+    --field-color: var(--color-text-neutral-default);
+    --field-bg-color: var(--color-background-neutral-default);
+    --field-border-color: var(--color-border-neutral-strong);
+    --treeitem-color: var(--color-text-neutral-default);
+    --treeitem-bg-color: var(--color-background-action-soft-active);
+    --treeitem-hover-color: var(--color-text-neutral-default);
+    --treeitem-selected-color: var(--color-text-neutral-default);
+    --treeitem-selected-bg-color: var(--color-background-action-soft-active);
+    --thumbnail-hover-color: var(--color-background-action-soft-hover);
+    --thumbnail-selected-color: var(--color-background-action-soft-active);
+    --doorhanger-bg-color: var(--color-background-neutral-default);
+    --doorhanger-border-color: var(--color-border-neutral-medium);
+    --doorhanger-hover-color: var(--color-text-neutral-default);
+    --doorhanger-hover-bg-color: var(--color-background-neutral-hover);
+    --doorhanger-separator-color: var(--color-border-neutral-default);
+    --dialog-button-bg-color: var(--color-background-action-soft);
+    --dialog-button-hover-bg-color: var(--color-background-action-soft-hover);
   }
 }
 
@@ -1182,13 +1216,13 @@ a:is(.toolbarButton, .secondaryToolbarButton)[href="#"] {
 }
 
 .toolbarField:focus {
-  border-color: #0a84ff;
+  border-color: var(--color-outline-focus-neutral);
 }
 
 .toolbarLabel {
   min-width: 16px;
   padding: 7px;
-  margin: 2px;
+  margin: 0 2px;
   border-radius: 2px;
   color: var(--main-color);
   font-size: var(--toolbar-font-size);
