@@ -640,6 +640,17 @@ const PDFViewerApplication = {
       const params = parseQueryString(queryString);
       file = params.get("file") ?? AppOptions.get("defaultUrl");
       validateFileURL(file);
+      if (params.get("isdownloadenabled") === "false") {
+        appConfig.toolbar?.download?.classList.add("hidden");
+        appConfig.secondaryToolbar?.downloadButton?.classList.add("hidden");
+      }
+      if (params.get("isopenenabled") === "false") {
+        appConfig.secondaryToolbar?.openFileButton?.classList.add("hidden");
+      }
+      if (params.get("isprintenabled") === "false") {
+        appConfig.toolbar?.print?.classList.add("hidden");
+        appConfig.secondaryToolbar?.printButton?.classList.add("hidden");
+      }
     } else if (PDFJSDev.test("MOZCENTRAL")) {
       file = window.location.href;
     } else if (PDFJSDev.test("CHROME")) {
