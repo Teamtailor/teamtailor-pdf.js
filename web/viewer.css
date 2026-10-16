@@ -62,7 +62,7 @@
   --editor-toolbar-base-offset: 105px;
 
   --main-color: var(--color-text-neutral-default);
-  --body-bg-color: var(--color-background-neutral-weak);
+  --body-bg-color: var(--color-background-neutral-medium);
   --progressBar-color: var(--color-background-action-strong);
   --progressBar-bg-color: var(--color-background-neutral-track);
   --progressBar-blend-color: var(--color-background-action-soft-solid);
