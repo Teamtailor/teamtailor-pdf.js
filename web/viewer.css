@@ -73,7 +73,7 @@
 
   --sidebar-narrow-bg-color: var(--color-background-neutral-default);
   --sidebar-toolbar-bg-color: var(--color-background-neutral-default);
-  --toolbar-bg-color: var(--color-background-neutral-default);
+  --toolbar-bg-color: var(--color-background-neutral-weak);
   --toolbar-border-color: var(--color-border-neutral-default);
   --toolbar-box-shadow: 0 1px 0 var(--toolbar-border-color);
   --toolbar-border-bottom: none;
@@ -103,7 +103,7 @@
   --treeitem-selected-bg-color: var(--color-background-action-soft-active);
   --thumbnail-hover-color: var(--color-background-action-soft-hover);
   --thumbnail-selected-color: var(--color-background-action-soft-active);
-  --doorhanger-bg-color: var(--color-background-neutral-default);
+  --doorhanger-bg-color: var(--color-background-neutral-weak);
   --doorhanger-border-color: var(--color-border-neutral-medium);
   --doorhanger-hover-color: var(--color-text-neutral-default);
   --doorhanger-hover-bg-color: var(--color-background-neutral-hover);
@@ -198,7 +198,7 @@
 
     --sidebar-narrow-bg-color: var(--color-background-neutral-default);
     --sidebar-toolbar-bg-color: var(--color-background-neutral-default);
-    --toolbar-bg-color: var(--color-background-neutral-default);
+    --toolbar-bg-color: var(--color-background-neutral-weak);
     --toolbar-border-color: var(--color-border-neutral-default);
     --button-hover-color: var(--color-background-neutral-hover);
     --toggled-btn-color: var(--color-text-neutral-default);
@@ -216,7 +216,7 @@
     --treeitem-selected-bg-color: var(--color-background-action-soft-active);
     --thumbnail-hover-color: var(--color-background-action-soft-hover);
     --thumbnail-selected-color: var(--color-background-action-soft-active);
-    --doorhanger-bg-color: var(--color-background-neutral-default);
+    --doorhanger-bg-color: var(--color-background-neutral-weak);
     --doorhanger-border-color: var(--color-border-neutral-medium);
     --doorhanger-hover-color: var(--color-text-neutral-default);
     --doorhanger-hover-bg-color: var(--color-background-neutral-hover);
