@@ -6,7 +6,7 @@
       "description": "The theme to use.\n0 = Use system theme.\n1 = Light theme.\n2 = Dark theme.",
       "type": "integer",
       "enum": [0, 1, 2],
-      "default": 2
+      "default": 1
     },
     "showPreviousViewOnLoad": {
       "description": "DEPRECATED. Set viewOnLoad to 1 to disable showing the last page/position on load.",
@@ -38,7 +38,7 @@
       "description": "Controls the state of the sidebar upon load.\n -1 = Default (uses PageMode if available, otherwise the last position if available/enabled).\n 0 = Do not show sidebar.\n 1 = Show thumbnails in sidebar.\n 2 = Show document outline in sidebar.\n 3 = Show attachments in sidebar.",
       "type": "integer",
       "enum": [-1, 0, 1, 2, 3],
-      "default": -1
+      "default": 0
     },
     "enableHandToolOnLoad": {
       "description": "DEPRECATED. Set cursorToolOnLoad to 1 to enable the hand tool by default.",
@@ -82,7 +82,7 @@
     },
     "enableStampEditor": {
       "type": "boolean",
-      "default": true
+      "default": false
     },
     "disableRange": {
       "title": "Disable range requests",
@@ -123,7 +123,7 @@
       "description": "Controls how external links will be opened.\n 0 = default.\n 1 = replaces current window.\n 2 = new window/tab.\n 3 = parent.\n 4 = in top window.",
       "type": "integer",
       "enum": [0, 1, 2, 3, 4],
-      "default": 0
+      "default": 2
     },
     "disablePageLabels": {
       "type": "boolean",
@@ -143,12 +143,12 @@
     "annotationMode": {
       "type": "integer",
       "enum": [0, 1, 2, 3],
-      "default": 2
+      "default": 0
     },
     "annotationEditorMode": {
       "type": "integer",
       "enum": [-1, 0, 3, 15],
-      "default": 0
+      "default": -1
     },
     "enablePermissions": {
       "type": "boolean",

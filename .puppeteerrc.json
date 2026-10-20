@@ -1,0 +1,6 @@
+{
+  "firefox": {
+    "version": "stable_150.0.2",
+    "skipDownload": false
+  }
+}

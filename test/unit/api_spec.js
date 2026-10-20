@@ -3192,8 +3192,11 @@ page 1 / 3`);
       });
 
       // Wait for font data to be loaded so we can check that the font names
-      // match.
+      // match. The operator list may arrive before FontLoader.bind resolves.
       await pdfPage.getOperatorList();
+      await new Promise(resolve => {
+        pdfPage.commonObjs.get(fontName, resolve);
+      });
       expect(pdfPage.commonObjs.has(fontName)).toEqual(true);
 
       await loadingTask.destroy();

@@ -2182,7 +2182,7 @@ if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {
         );
       };
 
-      const { origin, protocol } = new URL(file, window.location.href);
+      const { origin } = new URL(file, window.location.href);
 
       if (SAFE_HOSTED_VIEWER_ORIGINS.some(originMatches)) {
         // Local viewer, allow for any file locations

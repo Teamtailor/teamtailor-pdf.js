@@ -882,7 +882,7 @@ async function startBrowser({
   extraPrefsFirefox = {},
 }) {
   const options = {
-    product: browserName,
+    browser: browserName,
     protocol: "cdp",
     headless,
     defaultViewport: null,
