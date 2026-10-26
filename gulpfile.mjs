@@ -450,16 +450,31 @@ function tweakWebpackOutput(jsName) {
     " __webpack_exports__ = {};", // Normal builds.
     ",__webpack_exports__={};", // Minified builds.
   ];
-  const regex = new RegExp(`(${replacer.join("|")})`, "gm");
+  // Newer webpack versions don't create `__webpack_exports__` for ESM output,
+  // hence expose the entries of the final `export { ... };` statement instead.
+  const exportsPattern =
+    "export\\s*\\{([^}]*)\\};?\\s*(?=(?://# sourceMappingURL=[^\\n]*\\s*)?(?![\\s\\S]))";
+  const regex = new RegExp(`(${replacer.join("|")})|${exportsPattern}`, "gm");
 
-  return replace(regex, match => {
+  return replace(regex, (match, _replaced, names) => {
     switch (match) {
       case " __webpack_exports__ = {};":
         return ` __webpack_exports__ = globalThis.${jsName} = {};`;
       case ",__webpack_exports__={};":
         return `,__webpack_exports__=globalThis.${jsName}={};`;
     }
-    return match;
+    if (names === undefined) {
+      return match;
+    }
+    const entries = names
+      .split(",")
+      .map(name => name.trim())
+      .filter(Boolean)
+      .map(name => {
+        const [local, exported = local] = name.split(/\s+as\s+/);
+        return local === exported ? local : `${exported}: ${local}`;
+      });
+    return `${match}\nglobalThis.${jsName} = { ${entries.join(", ")} };`;
   });
 }
 
