@@ -12,7 +12,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* globals pdfjsLib, pdfjsViewer */
+/* globals pdfjsLib, _pdfjsTestingUtils, pdfjsViewer */
+
+import { fetchAndMergeWorkerCoverage } from "./coverage_utils.js";
 
 const {
   AnnotationLayer,
@@ -20,21 +22,26 @@ const {
   DrawLayer,
   getDocument,
   GlobalWorkerOptions,
-  Outliner,
+  OutputScale,
+  PDFWorker,
   PixelsPerInch,
   shadow,
   TextLayer,
   XfaLayer,
 } = pdfjsLib;
+const { HighlightOutliner } = _pdfjsTestingUtils;
 const { GenericL10n, parseQueryString, SimpleLinkService } = pdfjsViewer;
 
 const WAITING_TIME = 100; // ms
 const CMAP_URL = "/build/generic/web/cmaps/";
+const ICC_URL = "/build/generic/web/iccs/";
 const STANDARD_FONT_DATA_URL = "/build/generic/web/standard_fonts/";
+const WASM_URL = "/build/generic/web/wasm/";
 const IMAGE_RESOURCES_PATH = "/web/images/";
 const VIEWER_CSS = "../build/components/pdf_viewer.css";
 const VIEWER_LOCALE = "en-US";
 const WORKER_SRC = "../build/generic/build/pdf.worker.mjs";
+const RENDERER_SRC = "../build/generic/build/pdf.renderer.mjs";
 const RENDER_TASK_ON_CONTINUE_DELAY = 5; // ms
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -88,6 +95,7 @@ async function writeSVG(svgElement, ctx) {
       setTimeout(resolve, 10);
     });
   }
+
   return loadImage(svg_xml, ctx);
 }
 
@@ -105,33 +113,33 @@ async function inlineImages(node, silentErrors = false) {
           }
           return response.blob();
         })
-        // eslint-disable-next-line arrow-body-style
-        .then(blob => {
-          return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              resolve(reader.result);
-            };
-            reader.onerror = reject;
+        .then(
+          blob =>
+            new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => {
+                resolve(reader.result);
+              };
+              reader.onerror = reject;
 
-            reader.readAsDataURL(blob);
-          });
-        })
-        // eslint-disable-next-line arrow-body-style
-        .then(dataUrl => {
-          return new Promise((resolve, reject) => {
-            image.onload = resolve;
-            image.onerror = evt => {
-              if (silentErrors) {
-                resolve();
-                return;
-              }
-              reject(evt);
-            };
+              reader.readAsDataURL(blob);
+            })
+        )
+        .then(
+          dataUrl =>
+            new Promise((resolve, reject) => {
+              image.onload = resolve;
+              image.onerror = evt => {
+                if (silentErrors) {
+                  resolve();
+                  return;
+                }
+                reject(evt);
+              };
 
-            image.src = dataUrl;
-          });
-        })
+              image.src = dataUrl;
+            })
+        )
         .catch(reason => {
           throw new Error(`Error inlining image (${url}): ${reason}`);
         })
@@ -144,21 +152,40 @@ async function inlineImages(node, silentErrors = false) {
 async function convertCanvasesToImages(annotationCanvasMap, outputScale) {
   const results = new Map();
   const promises = [];
+  const canvasToImage = (canvas, key) => {
+    const { promise, resolve } = Promise.withResolvers();
+    promises.push(promise);
+    canvas.toBlob(blob => {
+      const image = document.createElement("img");
+      image.classList.add("wasCanvas");
+      image.onload = function () {
+        image.style.width = Math.floor(image.width / outputScale) + "px";
+        resolve();
+      };
+      const canvasName = canvas.getAttribute("data-canvas-name");
+      if (canvasName) {
+        image.setAttribute("data-canvas-name", canvasName);
+        let images = results.get(key);
+        if (!images) {
+          images = [];
+          results.set(key, images);
+        }
+        images.push(image);
+      } else {
+        results.set(key, image);
+      }
+      image.src = URL.createObjectURL(blob);
+    });
+  };
+
   for (const [key, canvas] of annotationCanvasMap) {
-    promises.push(
-      new Promise(resolve => {
-        canvas.toBlob(blob => {
-          const image = document.createElement("img");
-          image.classList.add("wasCanvas");
-          image.onload = function () {
-            image.style.width = Math.floor(image.width / outputScale) + "px";
-            resolve();
-          };
-          results.set(key, image);
-          image.src = URL.createObjectURL(blob);
-        });
-      })
-    );
+    if (Array.isArray(canvas)) {
+      for (const canvasItem of canvas) {
+        canvasToImage(canvasItem, key);
+      }
+    } else {
+      canvasToImage(canvas, key);
+    }
   }
   await Promise.all(promises);
   return results;
@@ -214,6 +241,18 @@ class Rasterize {
     return { svg, foreignObject, style, div };
   }
 
+  static createRootCSS(viewport) {
+    const { scale, userUnit } = viewport;
+    return [
+      ":root {",
+      "  --scale-round-x: 1px; --scale-round-y: 1px;",
+      `  --scale-factor: ${scale};`,
+      `  --user-unit: ${userUnit};`,
+      `  --total-scale-factor: ${scale * userUnit};`,
+      "}",
+    ].join("\n");
+  }
+
   static async annotationLayer(
     ctx,
     viewport,
@@ -224,16 +263,15 @@ class Rasterize {
     fieldObjects,
     page,
     imageResourcesPath,
-    renderForms = false
+    renderForms = false,
+    optionalContentConfigPromise = null
   ) {
     try {
       const { svg, foreignObject, style, div } = this.createContainer(viewport);
       div.className = "annotationLayer";
 
       const [common, overrides] = await this.annotationStylePromise;
-      style.textContent =
-        `${common}\n${overrides}\n` +
-        `:root { --scale-factor: ${viewport.scale} }`;
+      style.textContent = `${common}\n${overrides}\n${this.createRootCSS(viewport)}`;
 
       const annotationViewport = viewport.clone({ dontFlip: true });
       const annotationImageMap = await convertCanvasesToImages(
@@ -244,11 +282,10 @@ class Rasterize {
       // Rendering annotation layer as HTML.
       const parameters = {
         annotations,
-        linkService: new SimpleLinkService(),
         imageResourcesPath,
         renderForms,
-        annotationStorage,
         fieldObjects,
+        optionalContentConfig: await optionalContentConfigPromise,
       };
 
       // Ensure that the annotationLayer gets translated.
@@ -259,6 +296,8 @@ class Rasterize {
         annotationCanvasMap: annotationImageMap,
         page,
         viewport: annotationViewport,
+        linkService: new SimpleLinkService(),
+        annotationStorage,
       });
       await annotationLayer.render(parameters);
       await annotationLayer.showPopups();
@@ -292,9 +331,7 @@ class Rasterize {
       svg.setAttribute("font-size", 1);
 
       const [common, overrides] = await this.textStylePromise;
-      style.textContent =
-        `${common}\n${overrides}\n` +
-        `:root { --scale-factor: ${viewport.scale} }`;
+      style.textContent = `${common}\n${overrides}\n${this.createRootCSS(viewport)}`;
 
       // Rendering text layer as HTML.
       const textLayer = new TextLayer({
@@ -321,9 +358,7 @@ class Rasterize {
       svg.setAttribute("font-size", 1);
 
       const [common, overrides] = await this.drawLayerStylePromise;
-      style.textContent =
-        `${common}\n${overrides}` +
-        `:root { --scale-factor: ${viewport.scale} }`;
+      style.textContent = `${common}\n${overrides}\n${this.createRootCSS(viewport)}`;
 
       // Rendering text layer as HTML.
       const textLayer = new TextLayer({
@@ -345,9 +380,9 @@ class Rasterize {
         let x = parseFloat(left) / 100;
         let y = parseFloat(top) / 100;
         if (isNaN(x)) {
-          posRegex ||= /^calc\(var\(--scale-factor\)\*(.*)px\)$/;
+          posRegex ||= /^calc\(var\(--total-scale-factor\)\s*\*(.*)px\)$/;
           // The element is tagged so we've to extract the position from the
-          // string, e.g. `calc(var(--scale-factor)*66.32px)`.
+          // string, e.g. `calc(var(--total-scale-factor)*66.32px)`.
           let match = left.match(posRegex);
           if (match) {
             x = parseFloat(match[1]) / pageWidth;
@@ -368,21 +403,53 @@ class Rasterize {
           height: height / pageHeight,
         });
       }
-      // We set the borderWidth to 0.001 to slighly increase the size of the
+      // We set the borderWidth to 0.001 to slightly increase the size of the
       // boxes so that they can be merged together.
-      const outliner = new Outliner(boxes, /* borderWidth = */ 0.001);
+      const outliner = new HighlightOutliner(boxes, /* borderWidth = */ 0.001);
       // We set the borderWidth to 0.0025 in order to have an outline which is
       // slightly bigger than the highlight itself.
       // We must add an inner margin to avoid to have a partial outline.
-      const outlinerForOutline = new Outliner(
+      const outlinerForOutline = new HighlightOutliner(
         boxes,
         /* borderWidth = */ 0.0025,
         /* innerMargin = */ 0.001
       );
       const drawLayer = new DrawLayer({ pageIndex: 0 });
       drawLayer.setParent(div);
-      drawLayer.highlight(outliner.getOutlines(), "orange", 0.4);
-      drawLayer.highlightOutline(outlinerForOutline.getOutlines());
+      const outlines = outliner.getOutlines();
+      drawLayer.draw(
+        {
+          bbox: outlines.box,
+          root: {
+            viewBox: "0 0 1 1",
+            fill: "orange",
+            "fill-opacity": 0.4,
+          },
+          rootClass: {
+            highlight: true,
+            free: false,
+          },
+          path: {
+            d: outlines.toSVGPath(),
+          },
+        },
+        /* isPathUpdatable = */ false,
+        /* hasClip = */ true
+      );
+      const focusLine = outlinerForOutline.getOutlines();
+      drawLayer.drawOutline(
+        {
+          rootClass: {
+            highlightOutline: true,
+            free: false,
+          },
+          bbox: focusLine.box,
+          path: {
+            d: focusLine.toSVGPath(),
+          },
+        },
+        /* mustRemoveSelfIntersections = */ false
+      );
 
       svg.append(foreignObject);
 
@@ -430,7 +497,7 @@ class Rasterize {
 }
 
 /**
- * @typedef {Object} DriverOptions
+ * @typedef {object} DriverOptions
  * @property {HTMLSpanElement} inflight - Field displaying the number of
  *   inflight requests.
  * @property {HTMLInputElement} disableScrolling - Checkbox to disable
@@ -439,13 +506,36 @@ class Rasterize {
  * @property {HTMLDivElement} end - Container for a completion message.
  */
 
+function buffersEqual(a, b) {
+  if (a.byteLength !== b.byteLength) {
+    return false;
+  }
+  const v1 = new Uint8Array(a);
+  const v2 = new Uint8Array(b);
+  for (let i = 0; i < v1.length; i++) {
+    if (v1[i] !== v2[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
 class Driver {
+  #pdfWorker = null;
+
+  #coveragePerTest = false;
+
+  #prevMainCoverage = null;
+
+  #prevWorkerCoverage = null;
+
   /**
    * @param {DriverOptions} options
    */
   constructor(options) {
     // Configure the global worker options.
     GlobalWorkerOptions.workerSrc = WORKER_SRC;
+    GlobalWorkerOptions.rendererSrc = RENDERER_SRC;
 
     // We only need to initialize the `L10n`-instance here, since translation is
     // triggered by a `MutationObserver`; see e.g. `Rasterize.annotationLayer`.
@@ -464,7 +554,22 @@ class Driver {
     this.delay = params.get("delay") | 0;
     this.inFlightRequests = 0;
     this.testFilter = JSON.parse(params.get("testfilter") || "[]");
-    this.xfaOnly = params.get("xfaonly") === "true";
+    this.masterMode = params.get("mastermode") === "true";
+    this.sessionIndex = parseInt(params.get("sessionindex") || "0", 10);
+    this.sessionCount = parseInt(params.get("sessioncount") || "1", 10);
+
+    // When coverage is enabled, share a single persistent worker across all
+    // tasks so that the accumulated self.__coverage__ can be retrieved at the
+    // end before the worker is destroyed.
+    if (window.__coverage__) {
+      this.#pdfWorker = new PDFWorker({ name: "coverage-worker" });
+      this.#coveragePerTest = params.get("coveragepertest") === "true";
+    }
+
+    // Open a persistent WebSocket connection to the server for binary result
+    // submission.
+    this.ws = new WebSocket(`ws://${location.host}`);
+    this.ws.binaryType = "arraybuffer";
 
     // Create a working canvas
     this.canvas = document.createElement("canvas");
@@ -487,7 +592,6 @@ class Driver {
     };
     this._info("User agent: " + navigator.userAgent);
     this._log(`Harness thinks this browser is ${this.browser}\n`);
-    this._log('Fetching manifest "' + this.manifestFile + '"... ');
 
     if (this.delay > 0) {
       this._log("\nDelaying for " + this.delay + " ms...\n");
@@ -495,25 +599,44 @@ class Driver {
     // When gathering the stats the numbers seem to be more reliable
     // if the browser is given more time to start.
     setTimeout(async () => {
-      const response = await fetch(this.manifestFile);
-      if (!response.ok) {
-        throw new Error(response.statusText);
-      }
-      this._log("done\n");
-      this.manifest = await response.json();
-
-      if (this.testFilter?.length || this.xfaOnly) {
-        this.manifest = this.manifest.filter(item => {
-          if (this.testFilter.includes(item.id)) {
-            return true;
-          }
-          if (this.xfaOnly && item.enableXfa) {
-            return true;
-          }
-          return false;
+      if (this.ws.readyState !== WebSocket.OPEN) {
+        await new Promise(resolve => {
+          this.ws.addEventListener("open", resolve, { once: true });
         });
       }
-      this.currentTask = 0;
+
+      // Dynamic task queue: server sends tasks on demand.
+      this.taskQueue = [];
+      this.serverDone = false;
+      this.pendingTaskResolve = null;
+      this.currentTask = null;
+      this.tasksDone = 0;
+
+      this.ws.addEventListener("message", event => {
+        if (typeof event.data !== "string") {
+          return;
+        }
+        const msg = JSON.parse(event.data);
+        if (msg.type === "task") {
+          if (this.pendingTaskResolve) {
+            this.pendingTaskResolve(msg.task);
+            this.pendingTaskResolve = null;
+          } else {
+            this.taskQueue.push(msg.task);
+            // Prefetch PDF for this task if it's now first in queue.
+            if (this.taskQueue.length === 1) {
+              this._prefetchNextTask();
+            }
+          }
+        } else if (msg.type === "done") {
+          this.serverDone = true;
+          if (this.pendingTaskResolve) {
+            this.pendingTaskResolve(null);
+            this.pendingTaskResolve = null;
+          }
+        }
+      });
+
       this._nextTask();
     }, this.delay);
   }
@@ -522,37 +645,93 @@ class Driver {
    * A debugging tool to log to the terminal while tests are running.
    * XXX: This isn't currently referenced, but it's useful for debugging so
    * do not remove it.
-   *
    * @param {string} msg - The message to log, it will be prepended with the
    *    current PDF ID if there is one.
    */
   log(msg) {
     let id = this.browser;
-    const task = this.manifest[this.currentTask];
-    if (task) {
-      id += `-${task.id}`;
+    if (this.currentTask) {
+      id += `-${this.currentTask.id}`;
     }
-
     this._info(`${id}: ${msg}`);
+  }
+
+  _waitForNextTask() {
+    if (this.taskQueue.length > 0) {
+      return Promise.resolve(this.taskQueue.shift());
+    }
+    if (this.serverDone) {
+      return Promise.resolve(null);
+    }
+    this.ws.send(
+      JSON.stringify({ type: "requestTask", browser: this.browser })
+    );
+    return new Promise(resolve => {
+      this.pendingTaskResolve = resolve;
+    });
   }
 
   _nextTask() {
     let failure = "";
+    const completedTask = this.currentTask;
 
-    this._cleanup().then(() => {
-      if (this.currentTask === this.manifest.length) {
+    this._cleanup().then(async () => {
+      if (completedTask && this.#coveragePerTest) {
+        await this._sendPerTestCoverage(completedTask.id);
+      }
+
+      const task = await this._waitForNextTask();
+      if (!task) {
         this._done();
         return;
       }
-      const task = this.manifest[this.currentTask];
+
+      if (this.#coveragePerTest) {
+        this.#prevMainCoverage = structuredClone(window.__coverage__ ?? {});
+        if (this.#pdfWorker) {
+          try {
+            this.#prevWorkerCoverage =
+              await this.#pdfWorker.messageHandler.sendWithPromise(
+                "GetWorkerCoverage",
+                null
+              );
+          } catch {
+            this.#prevWorkerCoverage = {};
+          }
+        }
+      }
+
+      this.currentTask = task;
+
       task.round = 0;
       task.pageNum = task.firstPage || 1;
       task.stats = { times: [] };
       task.enableXfa = task.enableXfa === true;
 
+      if (task.includePages && task.type === "extract") {
+        if (this.masterMode) {
+          const includePages = [];
+          for (const page of task.includePages) {
+            if (Array.isArray(page)) {
+              for (let i = page[0]; i <= page[1]; i++) {
+                includePages.push(i);
+              }
+            } else {
+              includePages.push(page);
+            }
+          }
+          task.numberOfTasks = includePages.length;
+          task.includePages = includePages;
+        } else {
+          delete task.pageMapping;
+        }
+      }
+
       const prevFile = md5FileMap.get(task.md5);
       if (prevFile) {
         if (task.file !== prevFile) {
+          task._prefetchedLoadingTask?.destroy();
+          task._prefetchedLoadingTask = null;
           this._nextPage(
             task,
             `The "${task.file}" file is identical to the previously used "${prevFile}" file.`
@@ -563,21 +742,20 @@ class Driver {
         md5FileMap.set(task.md5, task.file);
       }
 
-      // Support *linked* test-cases for the other suites, e.g. unit- and
-      // integration-tests, without needing to run them as reference-tests.
-      if (task.type === "other") {
-        this._log(`Skipping file "${task.file}"\n`);
+      this._log(`[${++this.tasksDone}] ${task.id}:\n`);
 
-        if (!task.link) {
-          this._nextPage(task, 'Expected "other" test-case to be linked.');
-          return;
-        }
-        this.currentTask++;
+      // Skip PDFs used by other test suites.
+      if (task.type === "other") {
+        this._log(`  Skipping file "${task.file}"\n`);
         this._nextTask();
         return;
       }
 
-      this._log('Loading file "' + task.file + '"\n');
+      this._log(`  Loading file "${task.file}"\n`);
+
+      // Start fetching and parsing the next task's PDF in the worker
+      // now, so it overlaps with the current task's load and render time.
+      this._prefetchNextTask();
 
       try {
         let xfaStyleElement = null;
@@ -590,27 +768,34 @@ class Driver {
             .getElementsByTagName("head")[0]
             .append(xfaStyleElement);
         }
-        const isOffscreenCanvasSupported =
-          task.isOffscreenCanvasSupported === false ? false : undefined;
-
-        const loadingTask = getDocument({
-          url: new URL(task.file, window.location),
-          password: task.password,
-          cMapUrl: CMAP_URL,
-          standardFontDataUrl: STANDARD_FONT_DATA_URL,
-          disableAutoFetch: !task.enableAutoFetch,
-          pdfBug: true,
-          useSystemFonts: task.useSystemFonts,
-          useWorkerFetch: task.useWorkerFetch,
-          enableXfa: task.enableXfa,
-          isOffscreenCanvasSupported,
+        const documentOptions = {
+          ...this._getDocumentOptions(task),
           styleElement: xfaStyleElement,
-        });
+        };
+        const loadingTask =
+          task._prefetchedLoadingTask ?? getDocument(documentOptions);
+        task._prefetchedLoadingTask = null;
         let promise = loadingTask.promise;
+
+        if (!this.masterMode && task.type === "extract") {
+          promise = promise.then(async doc => {
+            const extractedDocumentOptions = { ...documentOptions };
+            delete extractedDocumentOptions.url;
+            extractedDocumentOptions.data = await doc.extractPages([
+              {
+                document: null,
+                includePages: task.includePages,
+              },
+            ]);
+            await loadingTask.destroy();
+            delete task.includePages;
+            return getDocument(extractedDocumentOptions).promise;
+          });
+        }
 
         if (task.annotationStorage) {
           for (const annotation of Object.values(task.annotationStorage)) {
-            const { bitmapName } = annotation;
+            const { bitmapName, quadPoints, paths, outlines } = annotation;
             if (bitmapName) {
               promise = promise.then(async doc => {
                 const response = await fetch(
@@ -643,6 +828,41 @@ class Driver {
                 return doc;
               });
             }
+            if (quadPoints) {
+              // Just to ensure that the quadPoints are always a Float32Array
+              // like IRL (in order to avoid bugs like bug 1907958).
+              annotation.quadPoints = new Float32Array(quadPoints);
+            }
+            if (paths) {
+              for (let i = 0, ii = paths.lines.length; i < ii; i++) {
+                paths.lines[i] = Float32Array.from(
+                  paths.lines[i],
+                  x => x ?? NaN
+                );
+              }
+              for (let i = 0, ii = paths.points.length; i < ii; i++) {
+                paths.points[i] = Float32Array.from(
+                  paths.points[i],
+                  x => x ?? NaN
+                );
+              }
+            }
+            if (outlines) {
+              if (Array.isArray(outlines)) {
+                for (let i = 0, ii = outlines.length; i < ii; i++) {
+                  outlines[i] = Float32Array.from(outlines[i], x => x ?? NaN);
+                }
+              } else {
+                outlines.outline = Float32Array.from(
+                  outlines.outline,
+                  x => x ?? NaN
+                );
+                outlines.points = Float32Array.from(
+                  outlines.points,
+                  x => x ?? NaN
+                );
+              }
+            }
           }
         }
 
@@ -657,13 +877,13 @@ class Driver {
                 await page.getAnnotations({ intent: "display" });
               }
             }
-            doc.annotationStorage.setAll(task.annotationStorage);
+            doc.annotationStorage._setValues(task.annotationStorage);
 
             const data = await doc.saveDocument();
             await loadingTask.destroy();
             delete task.annotationStorage;
 
-            return getDocument(data).promise;
+            return getDocument({ data }).promise;
           });
         }
 
@@ -677,6 +897,10 @@ class Driver {
             }
 
             task.pdfDoc = doc;
+            if (!task.save && task.print && task.annotationStorage) {
+              doc.annotationStorage._setValues(task.annotationStorage);
+              task.printAnnotationStorage = doc.annotationStorage.print;
+            }
             task.optionalContentConfigPromise = doc.getOptionalContentConfig({
               intent: task.print ? "print" : "display",
             });
@@ -708,6 +932,41 @@ class Driver {
     });
   }
 
+  _getDocumentOptions(task) {
+    return {
+      url: new URL(task.file, window.location),
+      password: task.password,
+      cMapUrl: CMAP_URL,
+      iccUrl: ICC_URL,
+      standardFontDataUrl: STANDARD_FONT_DATA_URL,
+      wasmUrl: WASM_URL,
+      disableAutoFetch: !task.enableAutoFetch,
+      pdfBug: true,
+      useSystemFonts: task.useSystemFonts,
+      useWasm: task.useWasm,
+      useWorkerFetch: task.useWorkerFetch,
+      enableXfa: task.enableXfa,
+      isOffscreenCanvasSupported:
+        task.isOffscreenCanvasSupported === false ? false : undefined,
+      disableFontFace: task.disableFontFace === true,
+      disableWorkerRendering: task.disableWorkerRendering === true,
+      ...(this.#pdfWorker ? { worker: this.#pdfWorker } : {}),
+    };
+  }
+
+  _prefetchNextTask() {
+    const task = this.taskQueue[0];
+    if (!task) {
+      return;
+    }
+    // Skip tasks that do not load a PDF or that need DOM setup (XFA style
+    // element injection) to happen synchronously before getDocument.
+    if (task.type === "other" || task.enableXfa) {
+      return;
+    }
+    task._prefetchedLoadingTask ??= getDocument(this._getDocumentOptions(task));
+  }
+
   _cleanup() {
     // Clear out all the stylesheets since a new one is created for each font.
     while (document.styleSheets.length > 0) {
@@ -724,13 +983,23 @@ class Driver {
 
     const destroyedPromises = [];
     // Wipe out the link to the pdfdoc so it can be GC'ed.
-    for (let i = 0; i < this.manifest.length; i++) {
-      if (this.manifest[i].pdfDoc) {
-        destroyedPromises.push(this.manifest[i].pdfDoc.destroy());
-        delete this.manifest[i].pdfDoc;
+    for (const task of [this.currentTask, ...this.taskQueue]) {
+      if (task?.pdfDoc) {
+        destroyedPromises.push(
+          this.#destroyLoadingTask(task.pdfDoc.loadingTask)
+        );
+        delete task.pdfDoc;
       }
     }
     return Promise.all(destroyedPromises);
+  }
+
+  async #destroyLoadingTask(loadingTask) {
+    if (window.__coverage__) {
+      // Collect coverage before destroy() terminates the renderer worker.
+      await fetchAndMergeWorkerCoverage(loadingTask._rendererWorker);
+    }
+    await loadingTask.destroy();
   }
 
   _exceptionToString(e) {
@@ -744,10 +1013,9 @@ class Driver {
   }
 
   _getLastPageNumber(task) {
-    if (!task.pdfDoc) {
-      return task.firstPage || 1;
-    }
-    return task.lastPage || task.pdfDoc.numPages;
+    return !task.pdfDoc
+      ? task.firstPage || 1
+      : task.lastPage || task.pdfDoc.numPages;
   }
 
   _nextPage(task, loadError) {
@@ -755,31 +1023,35 @@ class Driver {
     let ctx;
 
     if (!task.pdfDoc) {
-      const dataUrl = this.canvas.toDataURL("image/png");
-      this._sendResult(dataUrl, task, failure).then(() => {
-        this._log(
-          "done" + (failure ? " (failed !: " + failure + ")" : "") + "\n"
-        );
-        this.currentTask++;
-        this._nextTask();
-      });
+      new Promise(r => {
+        this.canvas.toBlob(r, "image/png");
+      })
+        .then(blob => this._sendResult(blob, task, failure))
+        .then(() => {
+          this._log(`done${failure ? ` (failed !: ${failure})` : ""}\n`);
+          this._nextTask();
+        });
       return;
     }
 
     if (task.pageNum > this._getLastPageNumber(task)) {
       if (++task.round < task.rounds) {
-        this._log(" Round " + (1 + task.round) + "\n");
+        this._log(`  Round ${1 + task.round}\n`);
         task.pageNum = task.firstPage || 1;
       } else {
-        this.currentTask++;
         this._nextTask();
         return;
       }
     }
 
-    if (task.skipPages && task.skipPages.includes(task.pageNum)) {
+    if (
+      task.skipPages?.includes(task.pageNum) ||
+      (this.masterMode &&
+        task.includePages &&
+        !task.includePages.includes(task.pageNum - 1))
+    ) {
       this._log(
-        " Skipping page " + task.pageNum + "/" + task.pdfDoc.numPages + "...\n"
+        `    Skipping page ${task.pageNum}/${task.pdfDoc.numPages}...\n`
       );
       task.pageNum++;
       this._nextPage(task);
@@ -789,14 +1061,14 @@ class Driver {
     if (!failure) {
       try {
         this._log(
-          " Loading page " + task.pageNum + "/" + task.pdfDoc.numPages + "... "
+          `    Loading page ${task.pageNum}/${task.pdfDoc.numPages}... `
         );
         ctx = this.canvas.getContext("2d", { alpha: false });
         task.pdfDoc.getPage(task.pageNum).then(
           page => {
             // Default to creating the test images at the devices pixel ratio,
             // unless the test explicitly specifies an output scale.
-            const outputScale = task.outputScale || window.devicePixelRatio;
+            const outputScale = task.outputScale || OutputScale.pixelRatio;
             let viewport = page.getViewport({
               scale: PixelsPerInch.PDF_TO_CSS_UNITS,
             });
@@ -835,10 +1107,11 @@ class Driver {
               renderPrint = false,
               renderXfa = false,
               annotationCanvasMap = null,
-              pageColors = null;
+              pageColors = null,
+              partialCrop = null;
 
-            if (task.annotationStorage) {
-              task.pdfDoc.annotationStorage.setAll(task.annotationStorage);
+            if (!task.print && task.annotationStorage) {
+              task.pdfDoc.annotationStorage._setValues(task.annotationStorage);
             }
 
             let textLayerCanvas, annotationLayerCanvas, annotationLayerContext;
@@ -866,8 +1139,8 @@ class Driver {
                   includeMarkedContent: true,
                   disableNormalization: true,
                 })
-                .then(function (textContent) {
-                  return task.type === "text"
+                .then(textContent =>
+                  task.type === "text"
                     ? Rasterize.textLayer(
                         textLayerContext,
                         viewport,
@@ -877,16 +1150,20 @@ class Driver {
                         textLayerContext,
                         viewport,
                         textContent
-                      );
-                });
+                      )
+                );
             } else {
               textLayerCanvas = null;
               // We fetch the `eq` specific test subtypes here, to avoid
               // accidentally changing the behaviour for other types of tests.
-              renderAnnotations = !!task.annotations;
-              renderForms = !!task.forms;
-              renderPrint = !!task.print;
-              renderXfa = !!task.enableXfa;
+
+              partialCrop = task.partial;
+              if (!partialCrop) {
+                renderAnnotations = !!task.annotations;
+                renderForms = !!task.forms;
+                renderPrint = !!task.print;
+                renderXfa = !!task.enableXfa;
+              }
               pageColors = task.pageColors || null;
 
               // Render the annotation layer if necessary.
@@ -914,16 +1191,18 @@ class Driver {
                   initPromise = page.getAnnotations({ intent: "display" });
                   annotationCanvasMap = new Map();
                 } else {
-                  initPromise = page.getXfa().then(function (xfaHtml) {
-                    return Rasterize.xfaLayer(
-                      annotationLayerContext,
-                      viewport,
-                      xfaHtml,
-                      task.fontRules,
-                      task.pdfDoc.annotationStorage,
-                      task.renderPrint
+                  initPromise = page
+                    .getXfa()
+                    .then(xfaHtml =>
+                      Rasterize.xfaLayer(
+                        annotationLayerContext,
+                        viewport,
+                        xfaHtml,
+                        task.fontRules,
+                        task.pdfDoc.annotationStorage,
+                        task.renderPrint
+                      )
                     );
-                  });
                 }
               } else {
                 annotationLayerCanvas = null;
@@ -931,7 +1210,7 @@ class Driver {
               }
             }
             const renderContext = {
-              canvasContext: ctx,
+              canvas: this.canvas,
               viewport,
               optionalContentConfigPromise: task.optionalContentConfigPromise,
               annotationCanvasMap,
@@ -943,8 +1222,13 @@ class Driver {
             } else if (renderPrint) {
               if (task.annotationStorage) {
                 renderContext.annotationMode = AnnotationMode.ENABLE_STORAGE;
+                renderContext.printAnnotationStorage =
+                  task.printAnnotationStorage;
               }
               renderContext.intent = "print";
+            }
+            if (partialCrop) {
+              renderContext.recordOperations = true;
             }
 
             const completeRender = error => {
@@ -976,7 +1260,7 @@ class Driver {
               this._snapshot(task, error);
             };
             initPromise
-              .then(data => {
+              .then(async data => {
                 const renderTask = page.render(renderContext);
 
                 if (task.renderTaskOnContinue) {
@@ -985,28 +1269,129 @@ class Driver {
                     setTimeout(cont, RENDER_TASK_ON_CONTINUE_DELAY);
                   };
                 }
-                return renderTask.promise.then(() => {
-                  if (annotationCanvasMap) {
-                    Rasterize.annotationLayer(
-                      annotationLayerContext,
-                      viewport,
-                      outputScale,
-                      data,
-                      annotationCanvasMap,
-                      task.pdfDoc.annotationStorage,
-                      task.fieldObjects,
-                      page,
-                      IMAGE_RESOURCES_PATH,
-                      renderForms
-                    ).then(() => {
-                      completeRender(false);
-                    });
-                  } else {
-                    completeRender(false);
+                await renderTask.promise;
+
+                if (partialCrop) {
+                  const clearOutsidePartial = () => {
+                    const { width, height } = ctx.canvas;
+                    // Everything above the partial area
+                    ctx.clearRect(
+                      0,
+                      0,
+                      width,
+                      Math.ceil(partialCrop.minY * height)
+                    );
+                    // Everything below the partial area
+                    ctx.clearRect(
+                      0,
+                      Math.floor(partialCrop.maxY * height),
+                      width,
+                      height
+                    );
+                    // Everything to the left of the partial area
+                    ctx.clearRect(
+                      0,
+                      0,
+                      Math.ceil(partialCrop.minX * width),
+                      height
+                    );
+                    // Everything to the right of the partial area
+                    ctx.clearRect(
+                      Math.floor(partialCrop.maxX * width),
+                      0,
+                      width,
+                      height
+                    );
+                  };
+
+                  clearOutsidePartial();
+                  // Capture pixel data synchronously for the comparison;
+                  // only encode to PNG in master mode where the server needs
+                  // to save it as the reference image.
+                  const baselinePixels = ctx.getImageData(
+                    0,
+                    0,
+                    ctx.canvas.width,
+                    ctx.canvas.height
+                  );
+                  const baselineBlob =
+                    this.masterMode && !task.knownPartialMismatch
+                      ? await new Promise(r => {
+                          ctx.canvas.toBlob(r, "image/png");
+                        })
+                      : null;
+                  this._clearCanvas();
+
+                  const recordedBBoxes = page.recordedBBoxes;
+
+                  const partialRenderContext = {
+                    canvas: this.canvas,
+                    viewport,
+                    optionalContentConfigPromise:
+                      task.optionalContentConfigPromise,
+                    annotationCanvasMap,
+                    pageColors,
+                    transform,
+                    recordOperations: false,
+                    operationsFilter(index) {
+                      if (recordedBBoxes.isEmpty(index)) {
+                        return false;
+                      }
+                      return (
+                        recordedBBoxes.minX(index) <= partialCrop.maxX &&
+                        recordedBBoxes.maxX(index) >= partialCrop.minX &&
+                        recordedBBoxes.minY(index) <= partialCrop.maxY &&
+                        recordedBBoxes.maxY(index) >= partialCrop.minY
+                      );
+                    },
+                  };
+
+                  const partialRenderTask = page.render(partialRenderContext);
+                  await partialRenderTask.promise;
+
+                  clearOutsidePartial();
+
+                  if (page.stats) {
+                    // Get the page stats *before* running cleanup.
+                    task.stats = page.stats;
                   }
-                });
+                  page.cleanup(/* resetStats = */ true);
+                  this._snapshot(
+                    task,
+                    false,
+                    // Sometimes the optimized version does not match the
+                    // baseline. Tests marked as "knownPartialMismatch" have
+                    // been manually verified to be good enough (e.g. there is
+                    // one pixel of a very slightly different shade), so we
+                    // avoid compating them to the non-optimized version and
+                    // instead use the optimized version also for makeref.
+                    task.knownPartialMismatch ? null : baselinePixels,
+                    baselineBlob
+                  );
+                  return;
+                }
+
+                if (annotationCanvasMap) {
+                  Rasterize.annotationLayer(
+                    annotationLayerContext,
+                    viewport,
+                    outputScale,
+                    data,
+                    annotationCanvasMap,
+                    task.pdfDoc.annotationStorage,
+                    task.fieldObjects,
+                    page,
+                    IMAGE_RESOURCES_PATH,
+                    renderForms,
+                    task.optionalContentConfigPromise
+                  ).then(() => {
+                    completeRender(false);
+                  });
+                } else {
+                  completeRender(false);
+                }
               })
-              .catch(function (error) {
+              .catch(error => {
                 completeRender("render : " + error);
               });
           },
@@ -1027,27 +1412,31 @@ class Driver {
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
   }
 
-  _snapshot(task, failure) {
+  async _snapshot(task, failure, baselinePixels = null, baselineBlob = null) {
     this._log("Snapshotting... ");
-
-    const dataUrl = this.canvas.toDataURL("image/png");
-    this._sendResult(dataUrl, task, failure).then(() => {
-      this._log(
-        "done" + (failure ? " (failed !: " + failure + ")" : "") + "\n"
-      );
-      task.pageNum++;
-      this._nextPage(task);
+    const snapshotBlob = await new Promise(r => {
+      this.canvas.toBlob(r, "image/png");
     });
+    if (baselinePixels) {
+      const snapPixels = this.canvas
+        .getContext("2d")
+        .getImageData(0, 0, this.canvas.width, this.canvas.height);
+      if (!buffersEqual(baselinePixels.data.buffer, snapPixels.data.buffer)) {
+        failure ||= "Optimized rendering differs from full rendering.";
+      }
+    }
+    await this._sendResult(snapshotBlob, task, failure, baselineBlob);
+    this._log(`done${failure ? ` (failed !: ${failure})` : ""}\n`);
+    task.pageNum++;
+    this._nextPage(task);
   }
 
   _quit() {
     this._log("Done !");
     this.end.textContent = "Tests finished. Close this window!";
-
-    // Send the quit request
-    fetch(`/tellMeToQuit?browser=${escape(this.browser)}`, {
-      method: "POST",
-    });
+    // Send quit over the same WebSocket channel so the server processes it
+    // only after all preceding result frames have been handled.
+    this.ws.send(JSON.stringify({ type: "quit", browser: this.browser }));
   }
 
   _info(message) {
@@ -1070,7 +1459,7 @@ class Driver {
       this.output.textContent += message;
     }
 
-    if (message.lastIndexOf("\n") >= 0 && !this.disableScrolling.checked) {
+    if (message.includes("\n") && !this.disableScrolling.checked) {
       // Scroll to the bottom of the page
       this.output.scrollTop = this.output.scrollHeight;
     }
@@ -1080,28 +1469,145 @@ class Driver {
     if (this.inFlightRequests > 0) {
       this.inflight.textContent = this.inFlightRequests;
       setTimeout(this._done.bind(this), WAITING_TIME);
+    } else if (this.#pdfWorker) {
+      this._collectWorkerCoverage().then(() => {
+        setTimeout(this._quit.bind(this), WAITING_TIME);
+      });
     } else {
       setTimeout(this._quit.bind(this), WAITING_TIME);
     }
   }
 
-  _sendResult(snapshot, task, failure) {
-    const result = JSON.stringify({
+  #computeCoverageDelta(afterCoverage, beforeCoverage) {
+    const delta = {};
+    for (const [key, afterFile] of Object.entries(afterCoverage)) {
+      const beforeFile = beforeCoverage?.[key];
+      const lines = new Set();
+      const funcs = new Set();
+
+      for (const [id, count] of Object.entries(afterFile.s)) {
+        if (count - (beforeFile?.s[id] ?? 0) > 0) {
+          const line = afterFile.statementMap?.[id]?.start?.line;
+          if (line !== undefined) {
+            lines.add(line);
+          }
+        }
+      }
+      for (const [id, count] of Object.entries(afterFile.f)) {
+        if (count - (beforeFile?.f[id] ?? 0) > 0) {
+          const name = afterFile.fnMap?.[id]?.name;
+          if (name) {
+            funcs.add(name);
+          }
+        }
+      }
+      if (lines.size > 0 || funcs.size > 0) {
+        const fstarts = Object.create(null);
+        for (const fn of Object.values(afterFile.fnMap ?? {})) {
+          const startLine = fn.decl?.start?.line;
+          if (startLine !== undefined && fn.name) {
+            fstarts[startLine] = fn.name;
+          }
+        }
+        delta[key] = { fstarts, lines: [...lines], funcs: [...funcs] };
+      }
+    }
+    return delta;
+  }
+
+  async _sendPerTestCoverage(taskId) {
+    if (!window.__coverage__) {
+      return;
+    }
+    const delta = this.#computeCoverageDelta(
+      window.__coverage__,
+      this.#prevMainCoverage
+    );
+    if (this.#pdfWorker) {
+      try {
+        const afterWorker =
+          await this.#pdfWorker.messageHandler.sendWithPromise(
+            "GetWorkerCoverage",
+            null
+          );
+        for (const [key, entry] of Object.entries(
+          this.#computeCoverageDelta(afterWorker, this.#prevWorkerCoverage)
+        )) {
+          if (delta[key]) {
+            Object.assign(delta[key].fstarts, entry.fstarts);
+            const lineSet = new Set(delta[key].lines);
+            for (const l of entry.lines) {
+              lineSet.add(l);
+            }
+            delta[key].lines = [...lineSet];
+            const funcSet = new Set(delta[key].funcs);
+            for (const f of entry.funcs) {
+              funcSet.add(f);
+            }
+            delta[key].funcs = [...funcSet];
+          } else {
+            delta[key] = entry;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    if (Object.keys(delta).length > 0) {
+      this.ws.send(
+        JSON.stringify({ type: "coverage", id: taskId, counts: delta })
+      );
+    }
+  }
+
+  async _collectWorkerCoverage() {
+    await fetchAndMergeWorkerCoverage(this.#pdfWorker);
+    this.#pdfWorker.destroy();
+    this.#pdfWorker = null;
+  }
+
+  async _sendResult(snapshotBlob, task, failure, baselineBlob = null) {
+    // Build a binary WebSocket frame:
+    //   [4 bytes BE: meta_len][meta JSON][4 bytes BE: snapshot_len]
+    //   [snapshot PNG][baseline PNG]
+    const meta = JSON.stringify({
       browser: this.browser,
       id: task.id,
       numPages: task.pdfDoc ? task.lastPage || task.pdfDoc.numPages : 0,
       lastPageNum: this._getLastPageNumber(task),
+      numberOfTasks: task.numberOfTasks ?? -1,
       failure,
       file: task.file,
       round: task.round,
-      page: task.pageNum,
-      snapshot,
+      page: task.pageMapping?.[task.pageNum] ?? task.pageNum,
       stats: task.stats.times,
       viewportWidth: task.viewportWidth,
       viewportHeight: task.viewportHeight,
       outputScale: task.outputScale,
     });
-    return this._send("/submit_task_results", result);
+    const metaBytes = new TextEncoder().encode(meta);
+    const snapshotBytes = new Uint8Array(await snapshotBlob.arrayBuffer());
+    const baselineBytes = baselineBlob
+      ? new Uint8Array(await baselineBlob.arrayBuffer())
+      : null;
+
+    const totalLen =
+      4 +
+      metaBytes.length +
+      4 +
+      snapshotBytes.length +
+      (baselineBytes?.length ?? 0);
+    const buf = new ArrayBuffer(totalLen);
+    const view = new DataView(buf);
+    const bytes = new Uint8Array(buf);
+    view.setUint32(0, metaBytes.length);
+    bytes.set(metaBytes, 4);
+    view.setUint32(4 + metaBytes.length, snapshotBytes.length);
+    bytes.set(snapshotBytes, 8 + metaBytes.length);
+    if (baselineBytes) {
+      bytes.set(baselineBytes, 8 + metaBytes.length + snapshotBytes.length);
+    }
+    this.ws.send(buf);
   }
 
   _send(url, message) {
@@ -1110,26 +1616,20 @@ class Driver {
 
     fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: message,
     })
       .then(response => {
-        // Retry until successful.
         if (!response.ok || response.status !== 200) {
           throw new Error(response.statusText);
         }
-
         this.inFlightRequests--;
         resolve();
       })
       .catch(reason => {
-        console.warn(`Driver._send failed (${url}): ${reason}`);
-
+        console.warn(`Driver._send failed (${url}):`, reason);
         this.inFlightRequests--;
         resolve();
-
         this._send(url, message);
       });
 

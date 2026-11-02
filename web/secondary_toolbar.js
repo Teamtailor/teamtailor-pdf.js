@@ -22,10 +22,11 @@ import {
   toggleCheckedBtn,
   toggleExpandedBtn,
 } from "./ui_utils.js";
+import { internalOpt } from "./internal_evt.js";
 import { PagesCountLimit } from "./pdf_viewer.js";
 
 /**
- * @typedef {Object} SecondaryToolbarOptions
+ * @typedef {object} SecondaryToolbarOptions
  * @property {HTMLDivElement} toolbar - Container for the secondary toolbar.
  * @property {HTMLButtonElement} toggleButton - Button to toggle the visibility
  *   of the secondary toolbar.
@@ -49,6 +50,8 @@ import { PagesCountLimit } from "./pdf_viewer.js";
  *   select tool.
  * @property {HTMLButtonElement} cursorHandToolButton - Button to enable the
  *   hand tool.
+ * @property {HTMLButtonElement} imageAltTextSettingsButton - Button for opening
+ *   the image alt-text settings dialog.
  * @property {HTMLButtonElement} documentPropertiesButton - Button for opening
  *   the document properties dialog.
  */
@@ -135,6 +138,11 @@ class SecondaryToolbar {
         element: options.spreadEvenButton,
         eventName: "switchspreadmode",
         eventDetails: { mode: SpreadMode.EVEN },
+        close: true,
+      },
+      {
+        element: options.imageAltTextSettingsButton,
+        eventName: "imagealttextsettings",
         close: true,
       },
       {
@@ -228,16 +236,31 @@ class SecondaryToolbar {
       });
     }
 
-    eventBus._on("cursortoolchanged", this.#cursorToolChanged.bind(this));
-    eventBus._on("scrollmodechanged", this.#scrollModeChanged.bind(this));
-    eventBus._on("spreadmodechanged", this.#spreadModeChanged.bind(this));
+    eventBus.on(
+      "cursortoolchanged",
+      this.#cursorToolChanged.bind(this),
+      internalOpt
+    );
+    eventBus.on(
+      "scrollmodechanged",
+      this.#scrollModeChanged.bind(this),
+      internalOpt
+    );
+    eventBus.on(
+      "spreadmodechanged",
+      this.#spreadModeChanged.bind(this),
+      internalOpt
+    );
   }
 
-  #cursorToolChanged({ tool }) {
+  #cursorToolChanged({ tool, disabled }) {
     const { cursorSelectToolButton, cursorHandToolButton } = this.#opts;
 
     toggleCheckedBtn(cursorSelectToolButton, tool === CursorTool.SELECT);
     toggleCheckedBtn(cursorHandToolButton, tool === CursorTool.HAND);
+
+    cursorSelectToolButton.disabled = disabled;
+    cursorHandToolButton.disabled = disabled;
   }
 
   #scrollModeChanged({ mode }) {

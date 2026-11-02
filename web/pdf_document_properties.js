@@ -14,15 +14,13 @@
  */
 
 /** @typedef {import("./event_utils.js").EventBus} EventBus */
-/** @typedef {import("./interfaces.js").IL10n} IL10n */
 /** @typedef {import("./overlay_manager.js").OverlayManager} OverlayManager */
 // eslint-disable-next-line max-len
 /** @typedef {import("../src/display/api.js").PDFDocumentProxy} PDFDocumentProxy */
 
 import { getPageSizeInches, isPortraitOrientation } from "./ui_utils.js";
+import { internalOpt } from "./internal_evt.js";
 import { PDFDateString } from "pdfjs-lib";
-
-const DEFAULT_FIELD_CONTENT = "-";
 
 // See https://en.wikibooks.org/wiki/Lentis/Conversion_to_the_Metric_Standard_in_the_United_States
 const NON_METRIC_LOCALES = ["en-us", "en-lr", "my"];
@@ -31,12 +29,12 @@ const NON_METRIC_LOCALES = ["en-us", "en-lr", "my"];
 // which are l10n-ids, should be lowercase.
 // See https://en.wikipedia.org/wiki/Paper_size
 const US_PAGE_NAMES = {
-  "8.5x11": "letter",
-  "8.5x14": "legal",
+  "8.5x11": "pdfjs-document-properties-page-size-name-letter",
+  "8.5x14": "pdfjs-document-properties-page-size-name-legal",
 };
 const METRIC_PAGE_NAMES = {
-  "297x420": "a-three",
-  "210x297": "a-four",
+  "297x420": "pdfjs-document-properties-page-size-name-a-three",
+  "210x297": "pdfjs-document-properties-page-size-name-a-four",
 };
 
 function getPageName(size, isPortrait, pageNames) {
@@ -47,9 +45,9 @@ function getPageName(size, isPortrait, pageNames) {
 }
 
 /**
- * @typedef {Object} PDFDocumentPropertiesOptions
+ * @typedef {object} PDFDocumentPropertiesOptions
  * @property {HTMLDialogElement} dialog - The overlay's DOM element.
- * @property {Object} fields - Names and elements of the overlay's fields.
+ * @property {object} fields - Names and elements of the overlay's fields.
  * @property {HTMLButtonElement} closeButton - Button for closing the overlay.
  */
 
@@ -60,8 +58,8 @@ class PDFDocumentProperties {
    * @param {PDFDocumentPropertiesOptions} options
    * @param {OverlayManager} overlayManager - Manager for the viewer overlays.
    * @param {EventBus} eventBus - The application event bus.
-   * @param {IL10n} l10n - Localization service.
-   * @param {function} fileNameLookup - The function that is used to lookup
+   * @param {L10n} l10n - Localization service.
+   * @param {Function} fileNameLookup - The function that is used to lookup
    *   the document fileName.
    */
   constructor(
@@ -69,13 +67,15 @@ class PDFDocumentProperties {
     overlayManager,
     eventBus,
     l10n,
-    fileNameLookup
+    fileNameLookup,
+    titleLookup
   ) {
     this.dialog = dialog;
     this.fields = fields;
     this.overlayManager = overlayManager;
     this.l10n = l10n;
     this._fileNameLookup = fileNameLookup;
+    this._titleLookup = titleLookup;
 
     this.#reset();
     // Bind the event listener for the Close button.
@@ -83,14 +83,20 @@ class PDFDocumentProperties {
 
     this.overlayManager.register(this.dialog);
 
-    eventBus._on("pagechanging", evt => {
-      this._currentPageNumber = evt.pageNumber;
-    });
-    eventBus._on("rotationchanging", evt => {
-      this._pagesRotation = evt.pagesRotation;
-    });
-
-    this._isNonMetricLocale = NON_METRIC_LOCALES.includes(l10n.getLanguage());
+    eventBus.on(
+      "pagechanging",
+      evt => {
+        this._currentPageNumber = evt.pageNumber;
+      },
+      internalOpt
+    );
+    eventBus.on(
+      "rotationchanging",
+      evt => {
+        this._pagesRotation = evt.pagesRotation;
+      },
+      internalOpt
+    );
   }
 
   /**
@@ -114,49 +120,49 @@ class PDFDocumentProperties {
       this.#updateUI();
       return;
     }
+    if (typeof PDFJSDev === "undefined" || PDFJSDev.test("TESTING")) {
+      this._fieldDataLastUpdated = Date.now();
+    }
 
     // Get the document properties.
-    const {
-      info,
-      /* metadata, */
-      /* contentDispositionFilename, */
-      contentLength,
-    } = await this.pdfDocument.getMetadata();
-
     const [
-      fileName,
-      fileSize,
-      creationDate,
-      modificationDate,
+      { info, metadata, /* contentDispositionFilename, */ contentLength },
       pageSize,
-      isLinearized,
     ] = await Promise.all([
-      this._fileNameLookup(),
-      this.#parseFileSize(contentLength),
-      this.#parseDate(info.CreationDate),
-      this.#parseDate(info.ModDate),
-      // eslint-disable-next-line arrow-body-style
-      this.pdfDocument.getPage(currentPageNumber).then(pdfPage => {
-        return this.#parsePageSize(getPageSizeInches(pdfPage), pagesRotation);
-      }),
-      this.#parseLinearization(info.IsLinearized),
+      this.pdfDocument.getMetadata(),
+      this.pdfDocument.getPage(currentPageNumber).then(
+        pdfPage => this.#parsePageSize(pdfPage, pagesRotation),
+        reason => {
+          console.error(
+            `PDFDocumentProperties - unable to get page ${currentPageNumber}.`,
+            reason
+          );
+          return undefined;
+        }
+      ),
     ]);
 
     this.#fieldData = Object.freeze({
-      fileName,
-      fileSize,
-      title: info.Title,
-      author: info.Author,
-      subject: info.Subject,
-      keywords: info.Keywords,
-      creationDate,
-      modificationDate,
-      creator: info.Creator,
-      producer: info.Producer,
+      fileName: this._fileNameLookup(),
+      fileSize: this.#parseFileSize(contentLength),
+      title: this._titleLookup(),
+      author: metadata?.get("dc:creator")?.join("\n") || info.Author,
+      subject: metadata?.get("dc:subject")?.join("\n") || info.Subject,
+      keywords: metadata?.get("pdf:keywords") || info.Keywords,
+      creationDate: this.#parseDate(
+        metadata?.get("xmp:createdate"),
+        info.CreationDate
+      ),
+      modificationDate: this.#parseDate(
+        metadata?.get("xmp:modifydate"),
+        info.ModDate
+      ),
+      creator: metadata?.get("xmp:creatortool") || info.Creator,
+      producer: metadata?.get("pdf:producer") || info.Producer,
       version: info.PDFFormatVersion,
       pageCount: this.pdfDocument.numPages,
       pageSize,
-      linearized: isLinearized,
+      linearized: this.#parseLinearization(info.IsLinearized),
       _currentPageNumber: currentPageNumber,
       _pagesRotation: pagesRotation,
     });
@@ -169,7 +175,7 @@ class PDFDocumentProperties {
       return; // The fileSize has already been correctly set.
     }
     const data = Object.assign(Object.create(null), this.#fieldData);
-    data.fileSize = await this.#parseFileSize(length);
+    data.fileSize = this.#parseFileSize(length);
 
     this.#fieldData = Object.freeze(data);
     this.#updateUI();
@@ -186,13 +192,12 @@ class PDFDocumentProperties {
    * Set a reference to the PDF document in order to populate the dialog fields
    * with the document properties. Note that the dialog will contain no
    * information if this method is not called.
-   *
    * @param {PDFDocumentProxy} pdfDocument - A reference to the PDF document.
    */
   setDocument(pdfDocument) {
     if (this.pdfDocument) {
       this.#reset();
-      this.#updateUI(true);
+      this.#updateUI();
     }
     if (!pdfDocument) {
       return;
@@ -214,44 +219,52 @@ class PDFDocumentProperties {
   /**
    * Always updates all of the dialog fields, to prevent inconsistent UI state.
    * NOTE: If the contents of a particular field is neither a non-empty string,
-   *       nor a number, it will fall back to `DEFAULT_FIELD_CONTENT`.
+   *       nor a number, it will fall back to "-".
    */
-  #updateUI(reset = false) {
-    if (reset || !this.#fieldData) {
-      for (const id in this.fields) {
-        this.fields[id].textContent = DEFAULT_FIELD_CONTENT;
-      }
-      return;
-    }
-    if (this.overlayManager.active !== this.dialog) {
-      // Don't bother updating the dialog if has already been closed,
+  #updateUI() {
+    if (this.#fieldData && this.overlayManager.active !== this.dialog) {
+      // Don't bother updating the dialog if it's already been closed,
+      // unless it's being reset (i.e. `this.#fieldData === null`),
       // since it will be updated the next time `this.open` is called.
       return;
     }
+    if (typeof PDFJSDev === "undefined" || PDFJSDev.test("TESTING")) {
+      this.dialog.dataset.fieldDataLastUpdated = this._fieldDataLastUpdated;
+    }
     for (const id in this.fields) {
-      const content = this.#fieldData[id];
-      this.fields[id].textContent =
-        content || content === 0 ? content : DEFAULT_FIELD_CONTENT;
+      const field = this.fields[id],
+        data = this.#fieldData?.[id];
+
+      if (data?.id) {
+        field.setAttribute("data-l10n-id", data.id);
+        if (data.args) {
+          field.setAttribute("data-l10n-args", JSON.stringify(data.args));
+        }
+      } else {
+        field.removeAttribute("data-l10n-id");
+        field.removeAttribute("data-l10n-args");
+
+        field.textContent = data || data === 0 ? data : "-";
+      }
     }
   }
 
-  async #parseFileSize(fileSize = 0) {
-    const kb = fileSize / 1024,
+  #parseFileSize(b = 0) {
+    const kb = b / 1024,
       mb = kb / 1024;
-    if (!kb) {
-      return undefined;
-    }
-    return this.l10n.get(`pdfjs-document-properties-${mb >= 1 ? "mb" : "kb"}`, {
-      size_mb: mb >= 1 && (+mb.toPrecision(3)).toLocaleString(),
-      size_kb: mb < 1 && (+kb.toPrecision(3)).toLocaleString(),
-      size_b: fileSize.toLocaleString(),
-    });
+    return kb
+      ? {
+          id:
+            mb >= 1
+              ? "pdfjs-document-properties-size-mb"
+              : "pdfjs-document-properties-size-kb",
+          args: { mb, kb, b },
+        }
+      : undefined;
   }
 
-  async #parsePageSize(pageSizeInches, pagesRotation) {
-    if (!pageSizeInches) {
-      return undefined;
-    }
+  async #parsePageSize(pdfPage, pagesRotation) {
+    let pageSizeInches = getPageSizeInches(pdfPage);
     // Take the viewer rotation into account as well; compare with Adobe Reader.
     if (pagesRotation % 180 !== 0) {
       pageSizeInches = {
@@ -259,7 +272,8 @@ class PDFDocumentProperties {
         height: pageSizeInches.width,
       };
     }
-    const isPortrait = isPortraitOrientation(pageSizeInches);
+    const isPortrait = isPortraitOrientation(pageSizeInches),
+      nonMetric = NON_METRIC_LOCALES.includes(this.l10n.getLanguage());
 
     let sizeInches = {
       width: Math.round(pageSizeInches.width * 100) / 100,
@@ -271,12 +285,12 @@ class PDFDocumentProperties {
       height: Math.round(pageSizeInches.height * 25.4 * 10) / 10,
     };
 
-    let rawName =
+    let nameId =
       getPageName(sizeInches, isPortrait, US_PAGE_NAMES) ||
       getPageName(sizeMillimeters, isPortrait, METRIC_PAGE_NAMES);
 
     if (
-      !rawName &&
+      !nameId &&
       !(
         Number.isInteger(sizeMillimeters.width) &&
         Number.isInteger(sizeMillimeters.height)
@@ -299,8 +313,8 @@ class PDFDocumentProperties {
         Math.abs(exactMillimeters.width - intMillimeters.width) < 0.1 &&
         Math.abs(exactMillimeters.height - intMillimeters.height) < 0.1
       ) {
-        rawName = getPageName(intMillimeters, isPortrait, METRIC_PAGE_NAMES);
-        if (rawName) {
+        nameId = getPageName(intMillimeters, isPortrait, METRIC_PAGE_NAMES);
+        if (nameId) {
           // Update *both* sizes, computed above, to ensure that the displayed
           // dimensions always correspond to the detected page name.
           sizeInches = {
@@ -312,51 +326,45 @@ class PDFDocumentProperties {
       }
     }
 
-    const [{ width, height }, unit, name, orientation] = await Promise.all([
-      this._isNonMetricLocale ? sizeInches : sizeMillimeters,
-      this.l10n.get(
-        `pdfjs-document-properties-page-size-unit-${
-          this._isNonMetricLocale ? "inches" : "millimeters"
-        }`
-      ),
-      rawName &&
-        this.l10n.get(`pdfjs-document-properties-page-size-name-${rawName}`),
-      this.l10n.get(
-        `pdfjs-document-properties-page-size-orientation-${
-          isPortrait ? "portrait" : "landscape"
-        }`
-      ),
-    ]);
+    const { width, height } = nonMetric ? sizeInches : sizeMillimeters;
+    const ids = [
+      nonMetric
+        ? "pdfjs-document-properties-page-size-unit-inches"
+        : "pdfjs-document-properties-page-size-unit-millimeters",
+      isPortrait
+        ? "pdfjs-document-properties-page-size-orientation-portrait"
+        : "pdfjs-document-properties-page-size-orientation-landscape",
+    ];
+    if (nameId) {
+      ids.push(nameId);
+    }
+    const [unit, orientation, name] = await this.l10n.get(ids);
 
-    return this.l10n.get(
-      `pdfjs-document-properties-page-size-dimension-${
-        name ? "name-" : ""
-      }string`,
-      {
-        width: width.toLocaleString(),
-        height: height.toLocaleString(),
-        unit,
-        name,
-        orientation,
-      }
-    );
+    return {
+      id: name
+        ? "pdfjs-document-properties-page-size-dimension-name-string"
+        : "pdfjs-document-properties-page-size-dimension-string",
+      args: { width, height, unit, name, orientation },
+    };
   }
 
-  async #parseDate(inputDate) {
-    const dateObject = PDFDateString.toDateObject(inputDate);
-    if (!dateObject) {
-      return undefined;
-    }
-    return this.l10n.get("pdfjs-document-properties-date-string", {
-      date: dateObject.toLocaleDateString(),
-      time: dateObject.toLocaleTimeString(),
-    });
+  #parseDate(metadataDate, infoDate) {
+    const dateObj =
+      Date.parse(metadataDate) || PDFDateString.toDateObject(infoDate);
+    return dateObj
+      ? {
+          id: "pdfjs-document-properties-date-time-string",
+          args: { dateObj: dateObj.valueOf() },
+        }
+      : undefined;
   }
 
   #parseLinearization(isLinearized) {
-    return this.l10n.get(
-      `pdfjs-document-properties-linearized-${isLinearized ? "yes" : "no"}`
-    );
+    return {
+      id: isLinearized
+        ? "pdfjs-document-properties-linearized-yes"
+        : "pdfjs-document-properties-linearized-no",
+    };
   }
 }
 

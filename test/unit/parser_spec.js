@@ -32,7 +32,7 @@ describe("parser", function () {
           allowStreams: true,
         });
 
-        parser.inlineStreamSkipEI(input);
+        parser.inlineStreamSkipEI(input, 0);
         expect(input.pos).toEqual(string.indexOf("Q"));
         expect(input.peekByte()).toEqual(0x51); // 'Q'
       });
@@ -47,7 +47,7 @@ describe("parser", function () {
           allowStreams: true,
         });
 
-        parser.inlineStreamSkipEI(input);
+        parser.inlineStreamSkipEI(input, 0);
         expect(input.pos).toEqual(string.length);
         expect(input.peekByte()).toEqual(-1);
       });
@@ -94,13 +94,11 @@ describe("parser", function () {
         expect(lexer.getNumber()).toEqual(11.234);
       });
 
-      it("should parse PostScript numbers", function () {
+      it("should parse PDF numbers", function () {
         const numbers = [
           "-.002",
           "34.5",
           "-3.62",
-          "123.6e10",
-          "1E-5",
           "-1.",
           "0.0",
           "123",
@@ -122,7 +120,7 @@ describe("parser", function () {
                 "work-around rounding bugs in Chromium browsers."
             );
 
-            expect(true).toEqual(true);
+            expect(true).toBeTrue();
             continue;
           }
           expect(result).toEqual(expected);
@@ -152,7 +150,17 @@ describe("parser", function () {
       });
 
       it("should treat a single decimal point, or minus/plus sign, as zero", function () {
-        const validNums = [".", "-", "+", "-.", "+.", "-\r\n.", "+\r\n."];
+        const validNums = [
+          ".",
+          "-",
+          "+",
+          "-.",
+          "+.",
+          "-\r\n.",
+          "+\r\n.",
+          "-(",
+          "-<",
+        ];
         for (const number of validNums) {
           const validInput = new StringStream(number);
           const validLexer = new Lexer(validInput);
@@ -201,11 +209,12 @@ describe("parser", function () {
     });
 
     describe("getHexString", function () {
-      it("should not throw exception on bad input", function () {
-        // '7 0 2 15 5 2 2 2 4 3 2 4' should be parsed as '70 21 55 22 24 32'.
+      it("should handle an odd number of digits", function () {
+        // '7 0 2 15 5 2 2 2 4 3 2 4' should be parsed as
+        // '70 21 55 22 24 32 40'.
         const input = new StringStream("<7 0 2 15 5 2 2 2 4 3 2 4>");
         const lexer = new Lexer(input);
-        expect(lexer.getHexString()).toEqual('p!U"$2');
+        expect(lexer.getHexString()).toEqual('p!U"$2@');
       });
     });
 
@@ -231,15 +240,15 @@ describe("parser", function () {
           const lexer = new Lexer(input);
 
           let obj = lexer.getObj();
-          expect(obj instanceof Cmd).toEqual(true);
+          expect(obj).toBeInstanceOf(Cmd);
           expect(obj.cmd).toEqual("\x14");
 
           obj = lexer.getObj();
-          expect(obj instanceof Cmd).toEqual(true);
+          expect(obj).toBeInstanceOf(Cmd);
           expect(obj.cmd).toEqual("q");
 
           obj = lexer.getObj();
-          expect(obj instanceof Cmd).toEqual(true);
+          expect(obj).toBeInstanceOf(Cmd);
           expect(obj.cmd).toEqual("Q");
 
           obj = lexer.getObj();
@@ -261,7 +270,7 @@ describe("parser", function () {
         ">>\n" +
         "endobj"
       );
-      expect(Linearization.create(stream1)).toEqual(null);
+      expect(Linearization.create(stream1)).toBeNull();
 
       // Linearization dictionary with invalid version number.
       // prettier-ignore
@@ -272,7 +281,7 @@ describe("parser", function () {
         ">>\n" +
         "endobj"
       );
-      expect(Linearization.create(stream2)).toEqual(null);
+      expect(Linearization.create(stream2)).toBeNull();
     });
 
     it("should accept a valid linearization dictionary", function () {
@@ -323,11 +332,8 @@ describe("parser", function () {
       );
         expect(function () {
           return Linearization.create(stream1);
-        }).toThrow(
-          new Error(
-            'The "L" parameter in the linearization ' +
-              "dictionary does not equal the stream length."
-          )
+        }).toThrowError(
+          'The "L" parameter in the linearization dictionary does not equal the stream length.'
         );
 
         // The /E parameter should not be zero.
@@ -347,10 +353,8 @@ describe("parser", function () {
       );
         expect(function () {
           return Linearization.create(stream2);
-        }).toThrow(
-          new Error(
-            'The "E" parameter in the linearization dictionary is invalid.'
-          )
+        }).toThrowError(
+          'The "E" parameter in the linearization dictionary is invalid.'
         );
 
         // The /O parameter should be an integer.
@@ -370,10 +374,8 @@ describe("parser", function () {
       );
         expect(function () {
           return Linearization.create(stream3);
-        }).toThrow(
-          new Error(
-            'The "O" parameter in the linearization dictionary is invalid.'
-          )
+        }).toThrowError(
+          'The "O" parameter in the linearization dictionary is invalid.'
         );
       }
     );
@@ -396,9 +398,7 @@ describe("parser", function () {
       );
       expect(function () {
         return Linearization.create(stream1);
-      }).toThrow(
-        new Error("Hint array in the linearization dictionary is invalid.")
-      );
+      }).toThrowError("Hint array in the linearization dictionary is invalid.");
 
       // The hint array should contain two, or four, elements.
       // prettier-ignore
@@ -417,9 +417,7 @@ describe("parser", function () {
       );
       expect(function () {
         return Linearization.create(stream2);
-      }).toThrow(
-        new Error("Hint array in the linearization dictionary is invalid.")
-      );
+      }).toThrowError("Hint array in the linearization dictionary is invalid.");
 
       // The hint array should not contain zero.
       // prettier-ignore
@@ -438,9 +436,7 @@ describe("parser", function () {
       );
       expect(function () {
         return Linearization.create(stream3);
-      }).toThrow(
-        new Error("Hint (2) in the linearization dictionary is invalid.")
-      );
+      }).toThrowError("Hint (2) in the linearization dictionary is invalid.");
     });
   });
 });

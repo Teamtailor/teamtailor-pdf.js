@@ -45,12 +45,6 @@ pdfjs-download-button =
 # Length of the translation matters since we are in a mobile context, with limited screen estate.
 pdfjs-download-button-label = බාගන්න
 pdfjs-bookmark-button-label = පවතින පිටුව
-# Used in Firefox for Android.
-pdfjs-open-in-app-button =
-    .title = යෙදුමෙහි අරින්න
-# Used in Firefox for Android.
-# Length of the translation matters since we are in a mobile context, with limited screen estate.
-pdfjs-open-in-app-button-label = යෙදුමෙහි අරින්න
 
 ##  Secondary toolbar and context menu
 
@@ -86,24 +80,12 @@ pdfjs-document-properties-button =
 pdfjs-document-properties-button-label = ලේඛනයේ ගුණාංග…
 pdfjs-document-properties-file-name = ගොනුවේ නම:
 pdfjs-document-properties-file-size = ගොනුවේ ප්‍රමාණය:
-# Variables:
-#   $size_kb (Number) - the PDF file size in kilobytes
-#   $size_b (Number) - the PDF file size in bytes
-pdfjs-document-properties-kb = කි.බ. { $size_kb } (බයිට { $size_b })
-# Variables:
-#   $size_mb (Number) - the PDF file size in megabytes
-#   $size_b (Number) - the PDF file size in bytes
-pdfjs-document-properties-mb = මෙ.බ. { $size_mb } (බයිට { $size_b })
 pdfjs-document-properties-title = සිරැසිය:
 pdfjs-document-properties-author = කතෘ:
 pdfjs-document-properties-subject = මාතෘකාව:
 pdfjs-document-properties-keywords = මූල පද:
 pdfjs-document-properties-creation-date = සෑදූ දිනය:
 pdfjs-document-properties-modification-date = සංශෝධිත දිනය:
-# Variables:
-#   $date (Date) - the creation/modification date of the PDF file
-#   $time (Time) - the creation/modification time of the PDF file
-pdfjs-document-properties-date-string = { $date }, { $time }
 pdfjs-document-properties-creator = නිර්මාතෘ:
 pdfjs-document-properties-producer = පීඩීඑෆ් සම්පාදක:
 pdfjs-document-properties-version = පීඩීඑෆ් අනුවාදය:
@@ -147,16 +129,6 @@ pdfjs-printing-not-ready = අවවාදයයි: මුද්‍රණයට
 
 ## Tooltips and alt text for side panel toolbar buttons
 
-pdfjs-document-outline-button-label = ලේඛනයේ වටසන
-pdfjs-attachments-button =
-    .title = ඇමුණුම් පෙන්වන්න
-pdfjs-attachments-button-label = ඇමුණුම්
-pdfjs-layers-button =
-    .title = ස්තර පෙන්වන්න (සියළු ස්තර පෙරනිමි තත්‍වයට යළි සැකසීමට දෙවරක් ඔබන්න)
-pdfjs-layers-button-label = ස්තර
-pdfjs-thumbs-button =
-    .title = සිඟිති රූ පෙන්වන්න
-pdfjs-thumbs-button-label = සිඟිති රූ
 pdfjs-findbar-button =
     .title = ලේඛනයෙහි සොයන්න
 pdfjs-findbar-button-label = සොයන්න
@@ -166,18 +138,14 @@ pdfjs-additional-layers = අතිරේක ස්තර
 
 # Variables:
 #   $page (Number) - the page number
-pdfjs-thumb-page-title =
-    .title = පිටුව { $page }
-# Variables:
-#   $page (Number) - the page number
 pdfjs-thumb-page-canvas =
     .aria-label = පිටුවේ සිඟිත රූව { $page }
 
 ## Find panel button title and messages
 
 pdfjs-find-input =
-    .title = සොයන්න
     .placeholder = ලේඛනයේ සොයන්න…
+    .title = සොයන්න
 pdfjs-find-previous-button =
     .title = මෙම වැකිකඩ කලින් යෙදුණු ස්ථානය සොයන්න
 pdfjs-find-previous-button-label = කලින්
@@ -188,7 +156,7 @@ pdfjs-find-highlight-checkbox = සියල්ල උද්දීපනය
 pdfjs-find-entire-word-checkbox-label = සමස්ත වචන
 pdfjs-find-reached-top = ලේඛනයේ මුදුනට ළඟා විය, පහළ සිට ඉහළට
 pdfjs-find-reached-bottom = ලේඛනයේ අවසානයට ළඟා විය, ඉහළ සිට පහළට
-pdfjs-find-not-found = වැකිකඩ හමු නොවිණි
+pdfjs-find-not-found = වැකිකඩ හමු නොවුණි
 
 ## Predefined zoom values
 
@@ -213,13 +181,6 @@ pdfjs-invalid-file-error = වලංගු නොවන හෝ හානිව�
 pdfjs-missing-file-error = මඟහැරුණු පීඩීඑෆ් ගොනුවකි.
 pdfjs-unexpected-response-error = අනපේක්‍ෂිත සේවාදායක ප්‍රතිචාරයකි.
 
-## Annotations
-
-# Variables:
-#   $date (Date) - the modification date of the annotation
-#   $time (Time) - the modification time of the annotation
-pdfjs-annotation-date-string = { $date }, { $time }
-
 ## Password
 
 pdfjs-password-label = මෙම පීඩීඑෆ් ගොනුව විවෘත කිරීමට මුරපදය යොදන්න.
@@ -236,18 +197,18 @@ pdfjs-editor-free-text-button-label = පෙළ
 pdfjs-editor-ink-button =
     .title = අඳින්න
 pdfjs-editor-ink-button-label = අඳින්න
+pdfjs-editor-stamp-button =
+    .title = රූප සංස්කරණය හෝ එක් කරන්න
+pdfjs-editor-stamp-button-label = රූප සංස්කරණය හෝ එක් කරන්න
+
+##
+
 # Editor Parameters
 pdfjs-editor-free-text-color-input = වර්ණය
 pdfjs-editor-free-text-size-input = තරම
 pdfjs-editor-ink-color-input = වර්ණය
 pdfjs-editor-ink-thickness-input = ඝණකම
-pdfjs-free-text =
-    .aria-label = වදන් සකසනය
-pdfjs-free-text-default-content = ලිවීීම අරඹන්න…
 
 ## Alt-text dialog
 
-
-## Editor resizers
-## This is used in an aria label to help to understand the role of the resizer.
-
+pdfjs-editor-alt-text-mark-decorative-description = මෙය දාර හෝ දිය සලකුණු වැනි අලංකාර රූප සඳහා භාවිතා වේ.

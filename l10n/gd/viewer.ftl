@@ -45,12 +45,6 @@ pdfjs-save-button-label = Sàbhail
 pdfjs-bookmark-button =
     .title = An duilleag làithreach (Seall an URL on duilleag làithreach)
 pdfjs-bookmark-button-label = An duilleag làithreach
-# Used in Firefox for Android.
-pdfjs-open-in-app-button =
-    .title = Fosgail san aplacaid
-# Used in Firefox for Android.
-# Length of the translation matters since we are in a mobile context, with limited screen estate.
-pdfjs-open-in-app-button-label = Fosgail san aplacaid
 
 ##  Secondary toolbar and context menu
 
@@ -104,24 +98,12 @@ pdfjs-document-properties-button =
 pdfjs-document-properties-button-label = Roghainnean na sgrìobhainne…
 pdfjs-document-properties-file-name = Ainm an fhaidhle:
 pdfjs-document-properties-file-size = Meud an fhaidhle:
-# Variables:
-#   $size_kb (Number) - the PDF file size in kilobytes
-#   $size_b (Number) - the PDF file size in bytes
-pdfjs-document-properties-kb = { $size_kb } KB ({ $size_b } bytes)
-# Variables:
-#   $size_mb (Number) - the PDF file size in megabytes
-#   $size_b (Number) - the PDF file size in bytes
-pdfjs-document-properties-mb = { $size_mb } MB ({ $size_b } bytes)
 pdfjs-document-properties-title = Tiotal:
 pdfjs-document-properties-author = Ùghdar:
 pdfjs-document-properties-subject = Cuspair:
 pdfjs-document-properties-keywords = Faclan-luirg:
 pdfjs-document-properties-creation-date = Latha a chruthachaidh:
 pdfjs-document-properties-modification-date = Latha atharrachaidh:
-# Variables:
-#   $date (Date) - the creation/modification date of the PDF file
-#   $time (Time) - the creation/modification time of the PDF file
-pdfjs-document-properties-date-string = { $date }, { $time }
 pdfjs-document-properties-creator = Cruthadair:
 pdfjs-document-properties-producer = Saothraiche a' PDF:
 pdfjs-document-properties-version = Tionndadh a' PDF:
@@ -167,23 +149,6 @@ pdfjs-printing-not-ready = Rabhadh: Cha deach am PDF a luchdadh gu tur airson cl
 
 ## Tooltips and alt text for side panel toolbar buttons
 
-pdfjs-toggle-sidebar-button =
-    .title = Toglaich am bàr-taoibh
-pdfjs-toggle-sidebar-notification-button =
-    .title = Toglaich am bàr-taoibh (tha oir-loidhne/ceanglachain/breathan aig an sgrìobhainn)
-pdfjs-toggle-sidebar-button-label = Toglaich am bàr-taoibh
-pdfjs-document-outline-button =
-    .title = Seall oir-loidhne na sgrìobhainn (dèan briogadh dùbailte airson a h-uile nì a leudachadh/a cho-theannadh)
-pdfjs-document-outline-button-label = Oir-loidhne na sgrìobhainne
-pdfjs-attachments-button =
-    .title = Seall na ceanglachain
-pdfjs-attachments-button-label = Ceanglachain
-pdfjs-layers-button =
-    .title = Seall na breathan (dèan briogadh dùbailte airson a h-uile breath ath-shuidheachadh dhan staid bhunaiteach)
-pdfjs-layers-button-label = Breathan
-pdfjs-thumbs-button =
-    .title = Seall na dealbhagan
-pdfjs-thumbs-button-label = Dealbhagan
 pdfjs-current-outline-item-button =
     .title = Lorg nì làithreach na h-oir-loidhne
 pdfjs-current-outline-item-button-label = Nì làithreach na h-oir-loidhne
@@ -196,18 +161,14 @@ pdfjs-additional-layers = Barrachd breathan
 
 # Variables:
 #   $page (Number) - the page number
-pdfjs-thumb-page-title =
-    .title = Duilleag a { $page }
-# Variables:
-#   $page (Number) - the page number
 pdfjs-thumb-page-canvas =
     .aria-label = Dealbhag duilleag a { $page }
 
 ## Find panel button title and messages
 
 pdfjs-find-input =
-    .title = Lorg
     .placeholder = Lorg san sgrìobhainn...
+    .title = Lorg
 pdfjs-find-previous-button =
     .title = Lorg làthair roimhe na h-abairt seo
 pdfjs-find-previous-button-label = Air ais
@@ -249,10 +210,6 @@ pdfjs-rendering-error = Thachair mearachd rè reandaradh na duilleige.
 
 ## Annotations
 
-# Variables:
-#   $date (Date) - the modification date of the annotation
-#   $time (Time) - the modification time of the annotation
-pdfjs-annotation-date-string = { $date }, { $time }
 # .alt: This is used as a tooltip.
 # Variables:
 #   $type (String) - an annotation type from a list defined in the PDF spec
@@ -277,23 +234,12 @@ pdfjs-editor-free-text-button-label = Teacsa
 pdfjs-editor-ink-button =
     .title = Tarraing
 pdfjs-editor-ink-button-label = Tarraing
+
+##
+
 # Editor Parameters
 pdfjs-editor-free-text-color-input = Dath
 pdfjs-editor-free-text-size-input = Meud
 pdfjs-editor-ink-color-input = Dath
 pdfjs-editor-ink-thickness-input = Tighead
 pdfjs-editor-ink-opacity-input = Trìd-dhoilleireachd
-pdfjs-free-text =
-    .aria-label = An deasaiche teacsa
-pdfjs-free-text-default-content = Tòisich air sgrìobhadh…
-pdfjs-ink =
-    .aria-label = An deasaiche tharraingean
-pdfjs-ink-canvas =
-    .aria-label = Dealbh a chruthaich cleachdaiche
-
-## Alt-text dialog
-
-
-## Editor resizers
-## This is used in an aria label to help to understand the role of the resizer.
-

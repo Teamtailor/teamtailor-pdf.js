@@ -59,7 +59,7 @@ describe("AnnotationStorage", function () {
     it("should set a new value in the annotation storage", function () {
       const annotationStorage = new AnnotationStorage();
       annotationStorage.setValue("123A", { value: "an other string" });
-      const value = annotationStorage.getAll()["123A"].value;
+      const { value } = annotationStorage.getRawValue("123A");
       expect(value).toEqual("an other string");
     });
 
@@ -72,16 +72,16 @@ describe("AnnotationStorage", function () {
       annotationStorage.onSetModified = callback;
 
       annotationStorage.setValue("asdf", { value: "original" });
-      expect(called).toBe(true);
+      expect(called).toBeTrue();
 
       // changing value
       annotationStorage.setValue("asdf", { value: "modified" });
-      expect(called).toBe(true);
+      expect(called).toBeTrue();
 
       // not changing value
       called = false;
       annotationStorage.setValue("asdf", { value: "modified" });
-      expect(called).toBe(false);
+      expect(called).toBeFalse();
     });
   });
 
@@ -95,18 +95,18 @@ describe("AnnotationStorage", function () {
       annotationStorage.onResetModified = callback;
       annotationStorage.setValue("asdf", { value: "original" });
       annotationStorage.resetModified();
-      expect(called).toBe(true);
+      expect(called).toBeTrue();
       called = false;
 
       // not changing value
       annotationStorage.setValue("asdf", { value: "original" });
       annotationStorage.resetModified();
-      expect(called).toBe(false);
+      expect(called).toBeFalse();
 
       // changing value
       annotationStorage.setValue("asdf", { value: "modified" });
       annotationStorage.resetModified();
-      expect(called).toBe(true);
+      expect(called).toBeTrue();
     });
   });
 });

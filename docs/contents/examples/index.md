@@ -1,6 +1,6 @@
 ---
 title: Examples
-template: layout.jade
+slug: examples
 ---
 
 ## Hello World Walkthrough
@@ -17,13 +17,13 @@ This tutorial shows how PDF.js can be used as a library in a web browser.
 The object structure of PDF.js loosely follows the structure of an actual PDF. At the top level there is a document object. From the document, more information and individual pages can be fetched. To get the document:
 
 ```js
-pdfjsLib.getDocument('helloworld.pdf')
+pdfjsLib.getDocument({ url: "helloworld.pdf" })
 ```
 
 Remember though that PDF.js uses promises, and the above will return a `PDFDocumentLoadingTask` instance that has a `promise` property which is resolved with the document object.
 
 ```js
-var loadingTask = pdfjsLib.getDocument('helloworld.pdf');
+var loadingTask = pdfjsLib.getDocument({ url: "helloworld.pdf" });
 loadingTask.promise.then(function(pdf) {
   // you can now use *pdf* here
 });
@@ -47,8 +47,8 @@ var viewport = page.getViewport({ scale: scale, });
 // Support HiDPI-screens.
 var outputScale = window.devicePixelRatio || 1;
 
-var canvas = document.getElementById('the-canvas');
-var context = canvas.getContext('2d');
+var canvas = document.getElementById("the-canvas");
+var context = canvas.getContext("2d");
 
 canvas.width = Math.floor(viewport.width * outputScale);
 canvas.height = Math.floor(viewport.height * outputScale);
@@ -83,17 +83,17 @@ var scaledViewport = page.getViewport({ scale: scale, });
 The example demonstrates how promises can be used to handle errors during loading.
 It also demonstrates how to wait until a page is loaded and rendered.
 
-<script async src="//jsfiddle.net/pdfjs/9engc9mw/embed/html,css,result/"></script>
+<script async src="https://jsfiddle.net/pdfjs/9engc9mw/embed/html,css,result/"></script>
 
 ### Hello World using base64 encoded PDF
 
 The PDF.js can accept any decoded base64 data as an array.
 
-<script async src="//jsfiddle.net/pdfjs/cq0asLqz/embed/html,css,result/"></script>
+<script async src="https://jsfiddle.net/pdfjs/cq0asLqz/embed/html,css,result/"></script>
 
 ### Previous/Next example
 
 The same canvas cannot be used to perform to draw two pages at the same time --
 the example demonstrates how to wait on previous operation to be complete.
 
-<script async src="//jsfiddle.net/pdfjs/wagvs9Lf/embed/html,css,result/"></script>
+<script async src="https://jsfiddle.net/pdfjs/wagvs9Lf/embed/html,css,result/"></script>

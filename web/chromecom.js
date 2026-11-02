@@ -17,8 +17,14 @@
 import { AppOptions } from "./app_options.js";
 import { BaseExternalServices } from "./external_services.js";
 import { BasePreferences } from "./preferences.js";
+import { DownloadManager as GenericDownloadManager } from "./download_manager.js";
 import { GenericL10n } from "./genericl10n.js";
 import { GenericScripting } from "./generic_scripting.js";
+import { SignatureStorage } from "./generic_signature_storage.js";
+
+// These strings are from chrome/app/resources/generated_resources_*.xtb.
+// eslint-disable-next-line sort-imports
+import i18nFileAccessLabels from "./chrome-i18n-allow-access-to-file-urls.json" with { type: "json" };
 
 if (typeof PDFJSDev === "undefined" || !PDFJSDev.test("CHROME")) {
   throw new Error(
@@ -30,15 +36,16 @@ if (typeof PDFJSDev === "undefined" || !PDFJSDev.test("CHROME")) {
   // Run this code outside DOMContentLoaded to make sure that the URL
   // is rewritten as soon as possible.
   const queryString = document.location.search.slice(1);
-  const m = /(^|&)file=([^&]*)/.exec(queryString);
-  const defaultUrl = m ? decodeURIComponent(m[2]) : "";
+  const m = /(?:^|&)file=([^&]*)/.exec(queryString);
+  let defaultUrl = m ? decodeURIComponent(m[1]) : "";
+  if (!defaultUrl && queryString.startsWith("DNR:")) {
+    // Redirected via DNR, see registerPdfRedirectRule in pdfHandler.js.
+    defaultUrl = queryString.slice(4);
+  }
 
   // Example: chrome-extension://.../http://example.com/file.pdf
   const humanReadableUrl = "/" + defaultUrl + location.hash;
   history.replaceState(history.state, "", humanReadableUrl);
-  if (top === window) {
-    chrome.runtime.sendMessage("showPageAction");
-  }
 
   AppOptions.set("defaultUrl", defaultUrl);
 })();
@@ -56,7 +63,6 @@ const ChromeCom = {
   /**
    * Creates an event that the extension is listening for and will
    * asynchronously respond by calling the callback.
-   *
    * @param {string} action - The action to trigger.
    * @param {string} [data] - The data to send.
    * @param {Function} [callback] - Response callback that will be called with
@@ -80,7 +86,6 @@ const ChromeCom = {
 
   /**
    * Resolves a PDF file path and attempts to detects length.
-   *
    * @param {string} file - Absolute URL of PDF file.
    * @param {Function} callback - A callback with resolved URL and file length.
    */
@@ -193,11 +198,8 @@ function requestAccessToLocalFile(fileUrl, overlayManager, callback) {
 
     // Use Chrome's definition of UI language instead of PDF.js's #lang=...,
     // because the shown string should match the UI at chrome://extensions.
-    // These strings are from chrome/app/resources/generated_resources_*.xtb.
-    const i18nFileAccessLabel = PDFJSDev.json(
-      "$ROOT/web/chrome-i18n-allow-access-to-file-urls.json"
-    )[chrome.i18n.getUILanguage?.()];
-
+    const i18nFileAccessLabel =
+      i18nFileAccessLabels[chrome.i18n.getUILanguage?.()];
     if (i18nFileAccessLabel) {
       document.getElementById("chrome-file-access-label").textContent =
         i18nFileAccessLabel;
@@ -252,24 +254,7 @@ function requestAccessToLocalFile(fileUrl, overlayManager, callback) {
   });
 }
 
-if (window === top) {
-  // Chrome closes all extension tabs (crbug.com/511670) when the extension
-  // reloads. To counter this, the tab URL and history state is saved to
-  // localStorage and restored by extension-router.js.
-  // Unfortunately, the window and tab index are not restored. And if it was
-  // the only tab in an incognito window, then the tab is not restored either.
-  addEventListener("unload", function () {
-    // If the runtime is still available, the unload is most likely a normal
-    // tab closure. Otherwise it is most likely an extension reload.
-    if (!isRuntimeAvailable()) {
-      localStorage.setItem(
-        "unload-" + Date.now() + "-" + document.hidden + "-" + location.href,
-        JSON.stringify(history.state)
-      );
-    }
-  });
-}
-
+let dnrRequestId;
 // This port is used for several purposes:
 // 1. When disconnected, the background page knows that the frame has unload.
 // 2. When the referrer was saved in history.state.chromecomState, it is sent
@@ -284,15 +269,16 @@ let port;
 // 3. Background -> page: Send latest referer and save to history.
 // 4. Page: Invoke callback.
 function setReferer(url, callback) {
-  if (!port) {
-    // The background page will accept the port, and keep adding the Referer
-    // request header to requests to |url| until the port is disconnected.
-    port = chrome.runtime.connect({ name: "chromecom-referrer" });
-  }
+  dnrRequestId ??= crypto.getRandomValues(new Uint32Array(1))[0] % 0x80000000;
+  // The background page will accept the port, and keep adding the Referer
+  // request header to requests to |url| until the port is disconnected.
+  port ??= chrome.runtime.connect({ name: "chromecom-referrer" });
+
   port.onDisconnect.addListener(onDisconnect);
   port.onMessage.addListener(onMessage);
   // Initiate the information exchange.
   port.postMessage({
+    dnrRequestId,
     referer: window.history.state?.chromecomState,
     requestUrl: url,
   });
@@ -319,6 +305,25 @@ function setReferer(url, callback) {
     port.onDisconnect.removeListener(onDisconnect);
     port.onMessage.removeListener(onMessage);
     callback();
+  }
+}
+
+/**
+ * This "should" really extend the `BaseDownloadManager` class,
+ * however doing it this way instead reduces code duplication.
+ */
+class DownloadManager extends GenericDownloadManager {
+  _getOpenDataUrl(blobUrl, filename, dest = null) {
+    // In the Chrome extension, the URL is rewritten using the history API
+    // in viewer.js, so an absolute URL must be generated.
+    let url =
+      chrome.runtime.getURL("/content/web/viewer.html") +
+      "?file=" +
+      encodeURIComponent(blobUrl + "#" + filename);
+    if (dest) {
+      url += `#${escape(dest)}`;
+    }
+    return url;
   }
 }
 
@@ -431,14 +436,25 @@ class ExternalServices extends BaseExternalServices {
   }
 
   createScripting() {
-    return new GenericScripting(AppOptions.get("sandboxBundleSrc"));
+    return new GenericScripting(
+      AppOptions.get("sandboxBundleSrc"),
+      AppOptions.get("wasmUrl")
+    );
+  }
+
+  createSignatureStorage(eventBus, signal) {
+    return new SignatureStorage(eventBus, signal);
   }
 }
 
 class MLManager {
+  isEnabledFor(_name) {
+    return false;
+  }
+
   async guess() {
     return null;
   }
 }
 
-export { ExternalServices, initCom, MLManager, Preferences };
+export { DownloadManager, ExternalServices, initCom, MLManager, Preferences };

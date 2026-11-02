@@ -13,40 +13,29 @@
  * limitations under the License.
  */
 
-import { AbortException, isNodeJS } from "../../src/shared/util.js";
-import { createTemporaryNodeServer } from "./test_utils.js";
+import { AbortException } from "../../src/shared/util.js";
 import { PDFFetchStream } from "../../src/display/fetch_stream.js";
+import { testCrossOriginRedirects } from "./common_pdfstream_tests.js";
+import { TestPdfsServer } from "./test_utils.js";
 
 describe("fetch_stream", function () {
-  let tempServer = null;
-
   function getPdfUrl() {
-    return isNodeJS
-      ? `http://127.0.0.1:${tempServer.port}/tracemonkey.pdf`
-      : new URL("../pdfs/tracemonkey.pdf", window.location).href;
+    return TestPdfsServer.resolveURL("tracemonkey.pdf");
   }
   const pdfLength = 1016315;
 
-  beforeAll(function () {
-    if (isNodeJS) {
-      tempServer = createTemporaryNodeServer();
-    }
+  beforeAll(async function () {
+    await TestPdfsServer.ensureStarted();
   });
 
-  afterAll(function () {
-    if (isNodeJS) {
-      // Close the server from accepting new connections after all test
-      // finishes.
-      const { server } = tempServer;
-      server.close();
-
-      tempServer = null;
-    }
+  afterAll(async function () {
+    await TestPdfsServer.ensureStopped();
   });
 
   it("read with streaming", async function () {
     const stream = new PDFFetchStream({
       url: getPdfUrl(),
+      rangeChunkSize: 32768,
       disableStream: false,
       disableRange: true,
     });
@@ -54,7 +43,7 @@ describe("fetch_stream", function () {
     const fullReader = stream.getFullReader();
 
     let isStreamingSupported, isRangeSupported;
-    const promise = fullReader.headersReady.then(function () {
+    await fullReader.headersReady.then(function () {
       isStreamingSupported = fullReader.isStreamingSupported;
       isRangeSupported = fullReader.isRangeSupported;
     });
@@ -71,11 +60,11 @@ describe("fetch_stream", function () {
       });
     };
 
-    await Promise.all([read(), promise]);
+    await read();
 
     expect(len).toEqual(pdfLength);
-    expect(isStreamingSupported).toEqual(true);
-    expect(isRangeSupported).toEqual(false);
+    expect(isStreamingSupported).toBeTrue();
+    expect(isRangeSupported).toBeFalse();
   });
 
   it("read ranges with streaming", async function () {
@@ -90,7 +79,7 @@ describe("fetch_stream", function () {
     const fullReader = stream.getFullReader();
 
     let isStreamingSupported, isRangeSupported, fullReaderCancelled;
-    const promise = fullReader.headersReady.then(function () {
+    await fullReader.headersReady.then(function () {
       isStreamingSupported = fullReader.isStreamingSupported;
       isRangeSupported = fullReader.isRangeSupported;
       // We shall be able to close full reader without any issue.
@@ -107,8 +96,8 @@ describe("fetch_stream", function () {
 
     const result1 = { value: 0 },
       result2 = { value: 0 };
-    const read = function (reader, lenResult) {
-      return reader.read().then(function (result) {
+    const read = (reader, lenResult) =>
+      reader.read().then(function (result) {
         if (result.done) {
           return undefined;
         }
@@ -116,18 +105,79 @@ describe("fetch_stream", function () {
         lenResult.value += result.value.byteLength;
         return read(reader, lenResult);
       });
-    };
 
     await Promise.all([
       read(rangeReader1, result1),
       read(rangeReader2, result2),
-      promise,
     ]);
 
-    expect(isStreamingSupported).toEqual(true);
-    expect(isRangeSupported).toEqual(true);
-    expect(fullReaderCancelled).toEqual(true);
+    expect(isStreamingSupported).toBeTrue();
+    expect(isRangeSupported).toBeTrue();
+    expect(fullReaderCancelled).toBeTrue();
     expect(result1.value).toEqual(rangeSize);
     expect(result2.value).toEqual(tailSize);
+  });
+
+  it("cancel after a failed read doesn't cause an unhandled rejection", async function () {
+    spyOn(globalThis, "fetch").and.callFake(
+      async () =>
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              controller.error(new Error("Network error"));
+            },
+          }),
+          { status: 200 }
+        )
+    );
+    const stream = new PDFFetchStream({
+      url: getPdfUrl(),
+      rangeChunkSize: 32768,
+      disableStream: false,
+      disableRange: false,
+    });
+
+    const fullReader = stream.getFullReader();
+    const rangeReader = stream.getRangeReader(0, 32768);
+    await expectAsync(fullReader.read()).toBeRejectedWithError("Network error");
+    await expectAsync(rangeReader.read()).toBeRejectedWithError(
+      "Network error"
+    );
+
+    fullReader.cancel(new AbortException("Don't need fullReader."));
+    rangeReader.cancel(new AbortException("Don't need rangeReader."));
+    // Allow any unhandled rejections to be reported.
+    await new Promise(resolve => {
+      setTimeout(resolve, 0);
+    });
+  });
+
+  describe("Redirects", function () {
+    it("redirects allowed if all responses are same-origin", async function () {
+      await testCrossOriginRedirects({
+        PDFStreamClass: PDFFetchStream,
+        redirectIfRange: false,
+        async testRangeReader(rangeReader) {
+          await expectAsync(rangeReader.read()).toBeResolved();
+        },
+      });
+    });
+
+    it("redirects blocked if any response is cross-origin", async function () {
+      await testCrossOriginRedirects({
+        PDFStreamClass: PDFFetchStream,
+        redirectIfRange: true,
+        async testRangeReader(rangeReader) {
+          // When read (sync), error should be reported.
+          await expectAsync(rangeReader.read()).toBeRejectedWithError(
+            /^Expected range response-origin "http:.*" to match "http:.*"\.$/
+          );
+          // When read again (async), error should be consistent.
+          await expectAsync(rangeReader.read()).toBeRejectedWithError(
+            /^Expected range response-origin "http:.*" to match "http:.*"\.$/
+          );
+        },
+      });
+    });
   });
 });

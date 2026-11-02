@@ -18,9 +18,10 @@
 import { AnnotationEditorType, shadow } from "pdfjs-lib";
 import { CursorTool, PresentationModeState } from "./ui_utils.js";
 import { GrabToPan } from "./grab_to_pan.js";
+import { internalOpt } from "./internal_evt.js";
 
 /**
- * @typedef {Object} PDFCursorToolsOptions
+ * @typedef {object} PDFCursorToolsOptions
  * @property {HTMLDivElement} container - The document container.
  * @property {EventBus} eventBus - The application event bus.
  * @property {number} [cursorToolOnLoad] - The cursor tool that will be enabled
@@ -65,7 +66,19 @@ class PDFCursorTools {
       // Cursor tools cannot be used in PresentationMode/AnnotationEditor.
       return;
     }
+    this.#switchTool(tool);
+  }
+
+  #switchTool(tool, disabled = false) {
     if (tool === this.#active) {
+      if (this.#prevActive !== null) {
+        // Ensure that the `disabled`-attribute of the buttons will be updated.
+        this.eventBus.dispatch("cursortoolchanged", {
+          source: this,
+          tool,
+          disabled,
+        });
+      }
       return; // The requested tool is already active.
     }
 
@@ -103,62 +116,73 @@ class PDFCursorTools {
     this.eventBus.dispatch("cursortoolchanged", {
       source: this,
       tool,
+      disabled,
     });
   }
 
   #addEventListeners() {
-    this.eventBus._on("switchcursortool", evt => {
-      if (!evt.reset) {
-        this.switchTool(evt.tool);
-      } else if (this.#prevActive !== null) {
-        annotationEditorMode = AnnotationEditorType.NONE;
-        presentationModeState = PresentationModeState.NORMAL;
+    const { eventBus } = this;
 
-        enableActive();
-      }
-    });
+    eventBus.on(
+      "switchcursortool",
+      evt => {
+        if (!evt.reset) {
+          this.switchTool(evt.tool);
+        } else if (this.#prevActive !== null) {
+          annotationEditorMode = AnnotationEditorType.NONE;
+          presentationModeState = PresentationModeState.NORMAL;
+
+          enableActive();
+        }
+      },
+      internalOpt
+    );
 
     let annotationEditorMode = AnnotationEditorType.NONE,
       presentationModeState = PresentationModeState.NORMAL;
 
     const disableActive = () => {
-      const prevActive = this.#active;
-
-      this.switchTool(CursorTool.SELECT);
-      this.#prevActive ??= prevActive; // Keep track of the first one.
+      this.#prevActive ??= this.#active; // Keep track of the first one.
+      this.#switchTool(CursorTool.SELECT, /* disabled = */ true);
     };
     const enableActive = () => {
-      const prevActive = this.#prevActive;
-
       if (
-        prevActive !== null &&
+        this.#prevActive !== null &&
         annotationEditorMode === AnnotationEditorType.NONE &&
         presentationModeState === PresentationModeState.NORMAL
       ) {
+        this.#switchTool(this.#prevActive);
         this.#prevActive = null;
-        this.switchTool(prevActive);
       }
     };
 
-    this.eventBus._on("annotationeditormodechanged", ({ mode }) => {
-      annotationEditorMode = mode;
+    eventBus.on(
+      "annotationeditormodechanged",
+      ({ mode }) => {
+        annotationEditorMode = mode;
 
-      if (mode === AnnotationEditorType.NONE) {
-        enableActive();
-      } else {
-        disableActive();
-      }
-    });
+        if (mode === AnnotationEditorType.NONE) {
+          enableActive();
+        } else {
+          disableActive();
+        }
+      },
+      internalOpt
+    );
 
-    this.eventBus._on("presentationmodechanged", ({ state }) => {
-      presentationModeState = state;
+    eventBus.on(
+      "presentationmodechanged",
+      ({ state }) => {
+        presentationModeState = state;
 
-      if (state === PresentationModeState.NORMAL) {
-        enableActive();
-      } else if (state === PresentationModeState.FULLSCREEN) {
-        disableActive();
-      }
-    });
+        if (state === PresentationModeState.NORMAL) {
+          enableActive();
+        } else if (state === PresentationModeState.FULLSCREEN) {
+          disableActive();
+        }
+      },
+      internalOpt
+    );
   }
 
   /**
